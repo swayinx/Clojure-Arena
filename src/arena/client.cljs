@@ -16,6 +16,7 @@
 (defonce client (atom {:mode :none :screen "inicio" :skin "brasa" :you "you" :online false :rtt 0
                        :world nil :previous nil :received-at 0 :pending [] :seq 0 :rooms [] :info {}}))
 (defonce socket (atom nil))
+(defonce last-message (atom 0))
 (defonce keys-down (atom #{}))
 (defonce mouse (atom {:x 650 :y 300 :down false}))
 (defonce actions (atom []))
@@ -141,7 +142,8 @@
 (defn match-clock [ms]
   (let [s (max 0 (js/Math.ceil (/ ms 1000)))] (str (js/Math.floor (/ s 60)) ":" (.padStart (str (mod s 60)) 2 "0"))))
 (defn refresh-score! [world]
-  (let [signature [(:phase world) (mapv #(select-keys % [:id :name :kills :deaths :damage]) (e/ranking world))]]
+  (let [signature [(:phase world) (:host @client) (:you @client)
+                   (mapv #(select-keys % [:id :name :kills :deaths :damage]) (e/ranking world))]]
     (when (not= signature @score-render-key)
       (reset! score-render-key signature) (clear! (by-id "score-rows"))
       (doseq [p (e/ranking world)]
@@ -233,10 +235,15 @@
   (let [world (e/training (:name (identity-message)) (:skin @client) 0)]
     (swap! client assoc :mode :training :world world :previous world :you "you" :code nil :pending [] :predicted nil)
     (begin-match!) (update-hud! world 0) (announce! "ENTRENAMIENTO · NOVA LISTA EN F")))
+(defn clear-room! []
+  (swap! client assoc :mode :none :world nil :previous nil :code nil :host nil :pending [] :predicted nil)
+  (reset! room-render-key nil) (reset! score-render-key nil)
+  (doseq [id ["lobby-players" "score-rows" "kill-feed"]] (clear! (by-id id)))
+  (hidden! "scoreboard" true))
 (defn leave! []
   (when (= :online (:mode @client)) (send! {:type :leave}))
-  (swap! client assoc :mode :none :world nil :previous nil :code nil :pending [] :predicted nil)
-  (hidden! "scoreboard" true) (screen! "inicio") (send! {:type :list}))
+  (clear-room!)
+  (screen! "inicio") (send! {:type :list}))
 
 (defn interpolate [previous current alpha]
   (reduce-kv
@@ -262,10 +269,10 @@
           (toast! "Invitación cargada. Elige tu nombre y pulsa UNIRME.")
           (reset! pending-invite nil)))
     :rooms (do (swap! client assoc :rooms (:rooms message)) (render-rooms! (:rooms message)))
-    :joined (do (swap! client assoc :you (:id message) :code (:code message) :mode :online :pending [] :seq 0)
-                (reset! room-render-key nil) (screen! "sala"))
+    :joined (do (clear-room!) (swap! client assoc :you (:id message) :code (:code message) :mode :online :pending [] :seq 0)
+                (screen! "sala"))
     :snapshot
-    (when (= :online (:mode @client))
+    (when (and (= :online (:mode @client)) (= (:code message) (:code @client)))
       (let [s @client w (:world message) t (perf) old (:world s)
             starting? (and (= :playing (:phase w)) (not= :playing (:phase old)))
             ack (get (:acks message) (:you s) -1)
@@ -280,23 +287,38 @@
           (clear-input!) (refresh-score! w)
           (when (= "juego" (:screen @client)) (hidden! "scoreboard" false)))
         (when (= "juego" (:screen @client)) (present-events! w (server-time)))))
-    :left (when (= :online (:mode @client)) (swap! client assoc :mode :none :world nil :code nil) (screen! "inicio"))
+    :left (when (= :online (:mode @client)) (clear-room!) (screen! "inicio"))
+    :heartbeat (send! {:type :heartbeat})
     :pong (when (number? (:sent message)) (swap! client assoc :rtt (- (perf) (:sent message))))
     :error (toast! (:message message))
     nil))
+(defn connection-lost! [ws]
+  (when (identical? ws @socket)
+    ;; Un cierre tardío de un socket anterior no puede borrar la conexión nueva.
+    (reset! socket nil)
+    (swap! client assoc :online false :rooms []) (text! "connection" "SIN CONEXIÓN")
+    (.remove (.-classList (by-id "connection")) "online")
+    (disable! "create-room" true) (disable! "join-room" true)
+    (render-rooms! [])
+    (when (= :online (:mode @client))
+      (leave!) (toast! "Se perdió la conexión. Vuelve a unirte a una sala al reconectar."))
+    (js/setTimeout connect! 3000)))
+(defn check-connection! []
+  (when-let [ws @socket]
+    (when (> (- (perf) @last-message) 12000)
+      (connection-lost! ws) (.close ws))))
 (defn connect! []
-  (when (contains? #{"http:" "https:"} (.-protocol js/location))
+  (when (and (nil? @socket) (contains? #{"http:" "https:"} (.-protocol js/location)))
     (let [ws (js/WebSocket. (str (if (= "https:" (.-protocol js/location)) "wss://" "ws://") (.-host js/location) "/ws"))]
       (reset! socket ws)
-      (set! (.-onmessage ws) (fn [event] (try (receive! (reader/read-string (.-data event)))
-                                            (catch :default err (js/console.error "Protocolo de sala:" err)))))
-      (set! (.-onclose ws)
-            (fn [_]
-              (swap! client assoc :online false) (text! "connection" "SIN CONEXIÓN")
-              (.remove (.-classList (by-id "connection")) "online")
-              (disable! "create-room" true) (disable! "join-room" true)
-              (when (= :online (:mode @client)) (leave!) (toast! "Se perdió el anfitrión. La sala se cerró en este navegador."))
-              (js/setTimeout connect! 3000)))
+      (reset! last-message (perf))
+      (set! (.-onmessage ws)
+        (fn [event]
+          (when (identical? ws @socket)
+            (try (let [message (reader/read-string (.-data event))]
+                   (reset! last-message (perf)) (receive! message))
+                 (catch :default err (js/console.error "Protocolo de sala:" err))))))
+      (set! (.-onclose ws) (fn [_] (connection-lost! ws)))
       (set! (.-onerror ws) (fn [_] nil)))))
 
 (defn copy-invite! []
@@ -448,6 +470,7 @@
   (text! "connection" "ENTRENAMIENTO SIN RED")
   (text! "host-hint" "Para salas compartidas ejecuta bb serve y abre http://localhost:8080."))
 (js/setInterval #(when (:online @client) (send! {:type :ping :sent (perf)})) 2000)
+(js/setInterval check-connection! 1000)
 (js/setInterval #(when (:online @client)
                    (-> (js/fetch "/api/info") (.then (fn [r] (.text r)))
                        (.then (fn [s] (swap! client assoc :info (reader/read-string s)) (refresh-invite!)))

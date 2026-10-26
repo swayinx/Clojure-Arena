@@ -11,6 +11,8 @@
 
 (def max-rooms 5)
 (def max-connections 48)
+(def heartbeat-ms 2000)
+(def connection-timeout-ms 12000)
 (defonce running (atom false))
 (defonce public-url (atom nil))
 (defonce server-port (atom 8080))
@@ -89,9 +91,11 @@
   (let [t (now) reset-window? (> (- t (:window p 0)) 1000)
         n (if reset-window? 1 (inc (:messages p 0)))
         p (assoc p :messages n :window (if reset-window? t (:window p)))
+        p (if (<= n 100) (assoc p :last-seen t) p)
         kind (:type message)]
     (cond
       (> n 100) p
+      (= kind :heartbeat) p
       (= kind :input)
       (let [seq-id (:seq message)]
         (if (and (:room-agent p) (integer? seq-id) (> seq-id (:seq p -1)))
@@ -112,7 +116,7 @@
       (when room
         (send (:agent room)
               (fn [r] (publish-room! (-> r (update :world e/remove-player id)
-                                          (update :members dissoc id) (update :inputs dissoc id)
+                                          (update :members dissoc id) (update :inputs dissoc id) (update :acks dissoc id)
                                           (assoc :host host))))))
       (cond-> (assoc-in s [:clients id :room] nil)
         (seq ids) (assoc-in [:rooms code] (assoc room :ids ids :host host))
@@ -207,12 +211,22 @@
 (defn connected [s id ch scope]
   (if (>= (count (:clients s)) max-connections)
     (do (fail! ch "El servidor llegó al límite de conexiones.") (http/close ch) s)
-    (let [a (watch-errors! (agent {:id id :ch ch :seq -1 :window (now) :messages 0}))
+    (let [a (watch-errors! (agent {:id id :ch ch :seq -1 :window (now) :messages 0 :last-seen (now)}))
           c {:id id :ch ch :scope scope :agent a :room nil}
           next (assoc-in s [:clients id] c)]
       (transmit! ch {:type :welcome :id id :info (info scope) :rooms (room-list next c)}) next)))
 (defn disconnected [s id]
   (broadcast-lobby! (update (detach s id) :clients dissoc id)))
+
+(defn heartbeat!
+  "El cierre TCP puede no llegar al perder Wi-Fi. Expira sesiones sin respuesta;
+   usa la misma salida que una pestaña cerrada para limpiar sala, plazas y creador."
+  [s timestamp]
+  (reduce (fn [state [id c]]
+            (if (> (- timestamp (:last-seen @(:agent c))) connection-timeout-ms)
+              (do (http/close (:ch c)) (disconnected state id))
+              (do (transmit! (:ch c) {:type :heartbeat}) state)))
+          s (:clients s)))
 
 (def mime-types {"html" "text/html; charset=utf-8" "css" "text/css; charset=utf-8"
                  "js" "text/javascript; charset=utf-8" "svg" "image/svg+xml"
@@ -270,14 +284,17 @@
                                                :legacy-unsafe-remote-addr? false}))
   (reset! running true)
   (future
-    (while @running
-      (let [t (now)]
-        (doseq [[code r] (:rooms @manager)]
-          ;; Un tick pendiente como máximo por sala: evita colas crecientes.
-          (when-not (contains? @room-busy code)
-            (swap! room-busy conj code)
-            (send (:agent r) tick-room t)))
-        (Thread/sleep e/step-ms))))
+    (loop [next-heartbeat 0]
+      (when @running
+        (let [t (now) heartbeat-due? (>= t next-heartbeat)]
+          (when heartbeat-due? (send manager heartbeat! t))
+          (doseq [[code r] (:rooms @manager)]
+            ;; Un tick pendiente como máximo por sala: evita colas crecientes.
+            (when-not (contains? @room-busy code)
+              (swap! room-busy conj code)
+              (send (:agent r) tick-room t)))
+          (Thread/sleep e/step-ms)
+          (recur (if heartbeat-due? (+ t heartbeat-ms) next-heartbeat))))))
   (println (str "Clojure Arena: http://localhost:" port))
   (doseq [url (lan-addresses)] (println "Misma Wi-Fi:" url))
   (println "Hasta 5 salas de 4 jugadores. Ctrl+C para cerrar.")

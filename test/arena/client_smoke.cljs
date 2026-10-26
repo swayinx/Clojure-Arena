@@ -1,7 +1,8 @@
 (ns arena.client-smoke
   "Ejecuta el bundle real con adaptadores DOM/Canvas simulados, sin navegador.
    Comprueba arranque, controles, cooldown y QR; no valida el aspecto visual."
-  (:require [cljs.nodejs :as nodejs]))
+  (:require [cljs.nodejs :as nodejs] [cljs.reader :as reader]
+            [clojure.string :as str] [arena.engine :as e]))
 (def fs (js/require "node:fs"))
 (def vm (js/require "node:vm"))
 (def check (js/require "node:assert/strict"))
@@ -16,7 +17,19 @@
 (def audio-starts (atom 0))
 (def volume-values (atom []))
 (def fullscreen-count (atom 0))
+(def intervals (atom {}))
+(def test-socket (atom nil))
+(def sent-messages (atom []))
 (def noop (fn [& _]))
+(defn mock-websocket [_]
+  (this-as self
+    (set! (.-readyState self) 1)
+    (set! (.-send self) #(swap! sent-messages conj (reader/read-string %)))
+    ;; Cierre sin callback, como una conexión TCP que aún no detecta la pérdida.
+    (set! (.-close self) #(set! (.-readyState self) 3))
+    (reset! test-socket self)
+    self))
+(aset mock-websocket "OPEN" 1)
 (defn mock-audio []
   (this-as self
     (set! (.-state self) "running")
@@ -40,7 +53,7 @@
                     :focus noop :select noop :close noop :showModal noop :remove noop
                     :appendChild #(swap! children conj %) :prepend #(swap! children conj %)
                     :replaceChildren (fn [& nodes] (reset! children (vec nodes)))
-                    :callbacks callbacks :properties props}]
+                    :callbacks callbacks :properties props :children children}]
         (swap! elements assoc id el) el)))
 (def document #js {:getElementById element :querySelectorAll (fn [_] #js []) :querySelector (fn [_] nil)
                    :createElement (fn [_] (element (str (random-uuid))))
@@ -54,15 +67,16 @@
 (aset (.-documentElement document) "requestFullscreen" #(do (swap! fullscreen-count inc) (fullscreen! true)))
 (aset document "exitFullscreen" #(fullscreen! false))
 (def sandbox #js {:document document :console #js {:log noop :error #(swap! console-errors conj %) :warn #(swap! console-errors conj %)}
-                  :location #js {:protocol "file:" :origin "null" :hostname "" :host "" :search ""}
+                  :location #js {:protocol "http:" :origin "http://localhost:8080" :hostname "localhost" :host "localhost:8080" :search ""}
                   :navigator #js {} :performance #js {:now (fn [] @clock)}
                   :localStorage #js {:getItem (fn [_] nil) :setItem noop}
-                  :setTimeout (fn [& _] 1) :clearTimeout noop :setInterval (fn [& _] 1)
+                  :setTimeout (fn [& _] 1) :clearTimeout noop :setInterval (fn [f ms] (swap! intervals assoc ms f) 1)
                   :requestAnimationFrame #(reset! frames [%])
                   :matchMedia (fn [_] #js {:matches false})
                   :addEventListener (fn [kind f] (swap! listeners assoc kind f))
                   :URLSearchParams js/URLSearchParams
                   :AudioContext mock-audio
+                  :WebSocket mock-websocket
                   :fetch (fn [url]
                            (let [bytes (.readFileSync fs (str "public/" url))]
                              (check (= "OggS" (.toString (.subarray bytes 0 4))))
@@ -78,6 +92,41 @@
 (defn step! [n]
   (dotimes [_ n] (swap! clock + 16.667) (when-let [f (first @frames)] (f @clock))))
 (defn text [id] (.-textContent (element id)))
+(defn tree-text [el]
+  (str (.-textContent el) (apply str (map tree-text @(aget el "children")))))
+(defn receive! [message] ((.-onmessage @test-socket) #js {:data (pr-str message)}))
+(defn presence-checks! []
+  (click! "leave-game")
+  (receive! {:type :welcome :id "self" :info {:scope :lan} :rooms []})
+  (receive! {:type :joined :id "self" :code "TEST01"})
+  (let [w (-> (e/world :arena 0) (e/add-player "self" "Aquí" "brasa") (e/add-player "gone" "Ausente" "mora"))
+        snapshot {:type :snapshot :code "TEST01" :host "gone" :name "Prueba" :visibility :lan :world w}]
+    (receive! snapshot)
+    (check (str/includes? (tree-text (element "lobby-players")) "Ausente"))
+    (receive! (assoc snapshot :host "self" :world (e/remove-player w "gone")))
+    (check (not (str/includes? (tree-text (element "lobby-players")) "Ausente")))
+    (receive! (assoc snapshot :code "OLD123"))
+    (check (not (str/includes? (tree-text (element "lobby-players")) "Ausente"))
+           "Una instantánea de otra sala no puede restaurar jugadores anteriores")
+    (receive! (assoc snapshot :world (e/start-round w 0))) (step! 5)
+    (check (str/includes? (tree-text (element "score-rows")) "Ausente"))
+    (receive! (assoc snapshot :host "self" :world (e/remove-player (e/start-round w 0) "gone"))) (step! 5)
+    (check (not (str/includes? (tree-text (element "score-rows")) "Ausente")))
+    (receive! {:type :heartbeat})
+    (check (= :heartbeat (:type (last @sent-messages))) "El cliente debe confirmar que sigue conectado")
+    (receive! {:type :rooms :rooms [{:code "TEST01" :name "Sala vieja" :count 2 :phase :waiting :visibility :lan}]})
+    (check (str/includes? (tree-text (element "room-list")) "Sala vieja"))
+    (swap! clock + 13001)
+    (check (fn? (get @intervals 1000)) "Debe existir un detector de conexión silenciosa")
+    ((get @intervals 1000))
+    (check (= "SIN CONEXIÓN" (text "connection")))
+    (check (empty? @(aget (element "lobby-players") "children")))
+    (check (empty? @(aget (element "score-rows") "children")))
+    (check (not (str/includes? (tree-text (element "room-list")) "Sala vieja")))
+    ;; Un paquete tardío del socket anterior no debe restaurar la sala borrada.
+    (receive! {:type :joined :id "self" :code "TEST01"}) (receive! snapshot)
+    (check (empty? @(aget (element "lobby-players") "children")))
+    (println "PRESENCIA CLIENTE: espera, marcador, heartbeat y limpieza sin conexión correctos.")))
 (set! (.-value (element "player-name")) "Smoke")
 (click! "start-game")
 (defn run-checks! []
@@ -109,6 +158,7 @@
 (set! (.-checked (element "sound-setting")) false)
 ((get @(aget (element "sound-setting") "callbacks") "change"))
 (check (zero? (last @volume-values)))
+(presence-checks!)
 (check (empty? @console-errors))
 (println "CLIENTE: Canvas, Q, Shift, F, reinicio, QR, pantalla completa, 12 muestras, volumen y silencio correctos.")
 (println "Adaptadores simulados: no sustituye revisión visual ni escucha en navegador."))

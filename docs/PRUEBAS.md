@@ -15,6 +15,8 @@ Fecha: 26 de octubre de 2026. Las pruebas automáticas se ejecutaron contra el c
 | Límite de salas/plazas | Sexta sala y quinto jugador rechazados | Prueba de integración |
 | Inicio exclusivo del creador | Confirmado | Prueba de integración |
 | Aislamiento entre salas | Movimiento y membresía separados | Prueba de integración |
+| Conexión silenciosa y cierre de pestaña | 6 comprobaciones de presencia; elimina jugador, transfiere creador, actualiza plazas y elimina sala vacía | `ARENA_TEST_PRESENCE=1 bb test-network` |
+| Vista de jugadores desconectados | Espera y marcador eliminan miembros; ignoran otra sala y socket anterior; limpieza tras perder conexión | `bb test-client`, adaptadores simulados |
 | Salida de creador | Miembro eliminado y rol transferido | Prueba de integración |
 | Túnel real Cloudflare / HTTPS | `/health` y `/api/info` respondieron correctamente | `bb internet` |
 | Upgrade WebSocket con Origin HTTPS | Respuesta HTTP 101 | Prueba del túnel |
@@ -99,3 +101,17 @@ Veinte sockets en una PC prueban concurrencia, límites y consistencia. No equiv
 Se inspeccionó la captura aportada por el usuario: la arena dejaba franjas laterales amplias y el HUD consumía una fila alta. La nueva distribución usa la altura para el mapa y coloca los indicadores en una columna lateral compacta. El cambio se verificó en código y en las pruebas de ejecución simulada; sigue pendiente una captura de esta versión en el navegador autorizado. La prueba del sonido comprueba archivos, carga y mezcla, no una escucha subjetiva.
 
 La prueba WSS por un túnel real se repitió después de incorporar el audio y pasó sus seis comprobaciones. Las 50 aserciones del motor/protocolo también pasaron. El motor y las reglas no cambiaron en esta revisión.
+
+### Regresión: jugadores que permanecían tras desconectarse
+
+Antes del arreglo, la prueba de un cliente silencioso terminó por timeout: el servidor no eliminaba la sesión sin un cierre WebSocket. La prueba del cliente también falló al inyectar una instantánea de otra sala, que restauraba sus jugadores.
+
+Después del arreglo pasaron las seis comprobaciones de presencia por WebSocket real y las pruebas del bundle para espera, marcador, mensajes de otra sala, confirmación de presencia y limpieza de una conexión silenciosa. También se ejecutó la batería de reglas/protocolo (50 aserciones). Las pruebas no necesitan desconectar físicamente el Wi-Fi: mantienen el socket abierto y dejan de contestar, reproduciendo la ausencia de confirmación de la aplicación.
+
+Para repetir en un puerto de pruebas:
+
+```bash
+PORT=8082 bb serve
+# Otra terminal:
+ARENA_TEST_URL=ws://localhost:8082/ws ARENA_TEST_PRESENCE=1 bb test-network
+```

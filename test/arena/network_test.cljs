@@ -10,25 +10,31 @@
   (when-not value (throw (js/Error. message)))
   (swap! checks inc) (println "OK" message))
 (defn sleep [ms] (js/Promise. (fn [resolve _] (js/setTimeout resolve ms))))
-(defn await! [f description]
+(defn await!
+  ([f description] (await! f description 6000))
+  ([f description timeout]
   (js/Promise.
     (fn [resolve reject]
       (let [started (js/Date.now)]
         (letfn [(poll [] (try
                           (if-let [v (f)] (resolve v)
-                            (if (> (- (js/Date.now) started) 6000)
+                            (if (> (- (js/Date.now) started) timeout)
                               (reject (js/Error. (str "Timeout: " description))) (js/setTimeout poll 15)))
-                          (catch :default ex (reject ex))))] (poll))))))
+                          (catch :default ex (reject ex))))] (poll)))))))
 (defn message [c kind] (last (filter #(= kind (:type %)) @(:messages c))))
 (defn send! [c m] (.send (:ws c) (pr-str m)))
 (defn connect!
   ([] (connect! origin))
   ([url]
-  (let [ws (js/WebSocket. url) c {:ws ws :messages (atom [])}]
+  (let [ws (js/WebSocket. url) c {:ws ws :messages (atom []) :respond? (atom true)}]
     (swap! clients conj c)
-    (set! (.-onmessage ws) (fn [event] (swap! (:messages c) #(vec (take-last 200 (conj % (reader/read-string (.-data event))))))))
+    (set! (.-onmessage ws)
+      (fn [event]
+        (let [m (reader/read-string (.-data event))]
+          (when (and (= :heartbeat (:type m)) @(:respond? c)) (send! c {:type :heartbeat}))
+          (swap! (:messages c) #(vec (take-last 200 (conj % m)))))))
     (set! (.-onerror ws) (fn [_] nil))
-    (-> (await! #(message c :welcome) "welcome") (.then (fn [_] c))))))
+    (-> (await! #(message c :welcome) "welcome") (.then (fn [welcome] (assoc c :id (:id welcome))))))))
 (defn connect-n! [n] (js/Promise.all (into-array (repeatedly n connect!))))
 (defn setup-room! [index]
   (-> (connect-n! 4)
@@ -144,4 +150,55 @@
                  (check! true "Escudo visible en el otro cliente a través del túnel")
                  (close-all!) (println (str "INTERNET COMPLETO: " @checks " comprobaciones.")) (js/setTimeout #(js/process.exit 0) 150)))
         (.catch (fn [ex] (js/console.error ex) (close-all!) (js/setTimeout #(js/process.exit 1) 100))))))
-(if (aget (.-env js/process) "ARENA_TEST_PUBLIC_URL") (run-internet!) (run-network!))
+(defn run-presence! []
+  (let [host (atom nil) guest (atom nil) observer (atom nil) code (atom nil) old-id (atom nil)]
+    (-> (connect-n! 3)
+        (.then (fn [connections]
+                 (let [[h g o] (array-seq connections)]
+                   (reset! host h) (reset! guest g) (reset! observer o)
+                   (reset! old-id (:id h))
+                   (send! h {:type :create :visibility :lan :name "Se desconecta"})
+                   (await! #(message h :joined) "presence room"))))
+        (.then (fn [joined]
+                 (reset! code (:code joined))
+                 (send! @guest {:type :join :code @code :name "Permanece"})
+                 (await! #(= 2 (count (get-in (message @host :snapshot) [:world :players]))) "two waiting players")))
+        (.then (fn [_]
+                 (.close (:ws @guest))
+                 (await! #(= 1 (count (get-in (message @host :snapshot) [:world :players]))) "tab close removes waiting player")))
+        (.then (fn [_]
+                 (check! true "Cerrar la conexión elimina al jugador de la espera")
+                 (connect!)))
+        (.then (fn [replacement]
+                 (reset! guest replacement)
+                 (send! replacement {:type :join :code @code :name "Permanece"})
+                 (await! #(= 2 (count (get-in (message @host :snapshot) [:world :players]))) "freed slot reused")))
+        (.then (fn [_]
+                 (check! true "Se puede ocupar la plaza liberada con una conexión nueva")
+                 (send! @host {:type :start})
+                 (await! #(= :playing (get-in (message @guest :snapshot) [:world :phase])) "presence game started")))
+        (.then (fn [_]
+                 ;; El socket permanece abierto, pero el cliente ya no confirma presencia.
+                 (reset! (:respond? @host) false)
+                 (await! #(not (contains? (get-in (message @guest :snapshot) [:world :players]) @old-id))
+                         "silent connection must expire" 18000)))
+        (.then (fn [_]
+                 (let [snap (message @guest :snapshot)]
+                   (check! (= 1 (count (get-in snap [:world :players]))) "El cliente silencioso desaparece del combate")
+                   (check! (= (:host snap) (:id @guest)) "El creador se transfiere al jugador conectado"))
+                 (await! #(some (fn [r] (and (= @code (:code r)) (= 1 (:count r)))) (:rooms (message @observer :rooms)))
+                         "lobby count updated")))
+        (.then (fn [_]
+                 (check! true "El listado público actualiza las plazas al desconectarse")
+                 (.close (:ws @guest))
+                 (await! #(not-any? (fn [r] (= @code (:code r))) (:rooms (message @observer :rooms))) "empty room deleted")))
+        (.then (fn [_]
+                 (check! true "La sala vacía desaparece del listado")
+                 (close-all!) (println (str "PRESENCIA COMPLETA: " @checks " comprobaciones."))
+                 (js/setTimeout #(js/process.exit 0) 150)))
+        (.catch (fn [ex] (js/console.error ex) (close-all!) (js/setTimeout #(js/process.exit 1) 100))))))
+
+(cond
+  (aget (.-env js/process) "ARENA_TEST_PRESENCE") (run-presence!)
+  (aget (.-env js/process) "ARENA_TEST_PUBLIC_URL") (run-internet!)
+  :else (run-network!))

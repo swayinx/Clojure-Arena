@@ -174,6 +174,14 @@ bb test-network
 
 `bb test-client` ejecuta el bundle real con adaptadores DOM/Canvas simulados. Comprueba controles, indicadores y QR sin abrir un navegador. No sustituye la revisión visual ni mide FPS.
 
+Para reproducir cierres y pérdidas de conexión (servidor vacío):
+
+```bash
+ARENA_TEST_PRESENCE=1 bb test-network
+```
+
+La prueba comprueba cerrar una conexión, volver a ocupar su plaza, dejar un cliente silencioso sin enviar cierre, transferir el creador y eliminar la sala vacía. Tarda unos 15 segundos además de la compilación.
+
 Resultados y límites de las comprobaciones: [docs/PRUEBAS.md](docs/PRUEBAS.md).
 
 ## 7. Archivos y entrega del curso
@@ -202,6 +210,8 @@ El proyecto se conserva en **Git local**, sin remoto ni publicación en GitHub. 
 ## Límites explícitos
 
 Esta entrega está orientada a una demostración de hasta veinte personas. No tiene cuentas, persistencia de resultados, matchmaking global, recuperación de una partida después de apagar el servidor ni migración de la simulación a otra PC. Al desconectarse el creador, cambia el creador de la sala; si se apaga la **PC anfitriona**, todas sus salas terminan.
+
+**Desconexiones:** salir o cerrar la pestaña elimina al jugador al recibirse el cierre. Si se pierde la red sin aviso, el servidor comprueba presencia cada 2 s y elimina la conexión tras 12 s sin respuesta (normalmente 12–14 s). Actualiza el combate, las plazas y el creador. Una pestaña congelada o una PC suspendida también puede agotar ese plazo; al volver debe unirse de nuevo. El cliente limpia la sala y el marcador si pierde contacto con el anfitrión.
 
 Los jugadores pueden crear salas dentro del anfitrión compartido. Eso no convierte sus navegadores en servidores. Para hospedar desde otra PC se ejecuta otra copia del servidor y se comparte su enlace.
 

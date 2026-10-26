@@ -110,6 +110,10 @@ EDN es un formato de datos de Clojure. Se usa `pr-str` para escribir y `clojure.
  :world {...} :acks {"id-jugador" 25}}
 ```
 
+Además del ping que mide latencia, el servidor envía `{:type :heartbeat}` cada dos segundos y el cliente responde al recibirlo. Esto evita depender exclusivamente de un temporizador del navegador en segundo plano. El agente del jugador registra la última actividad; el gestor elimina sesiones con más de 12 segundos sin respuesta usando `disconnected` y `detach`, igual que ante un cierre normal. El barrido da una detección habitual de 12–14 segundos; no distingue una red rota de una pestaña completamente suspendida.
+
+En el navegador, un detector de ausencia de mensajes limpia la vista tras 12 segundos sin contacto y vuelve a conectar. Las instantáneas deben pertenecer al código de sala actual; los callbacks de un socket reemplazado se ignoran. Así un paquete atrasado no restaura jugadores de una sesión anterior.
+
 El cliente transmite **intenciones**, no vida, daño, posición final ni bajas. El servidor fija los números válidos. Los IDs reales los crea el servidor. Las coordenadas de apuntado y direcciones se acotan; se limitan mensajes, plazas, salas, balas y eventos.
 
 ## Transporte LAN e Internet
