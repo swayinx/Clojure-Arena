@@ -289,3 +289,9 @@ La inmutabilidad no significa copia profunda de todo el mundo por cada cambio. T
 **¿Por qué no alcanza con abrir index.html para multijugador?** Un archivo local no ejecuta el servidor ni ofrece un WebSocket a otros equipos. Para salas usamos `bb serve` y compartimos la dirección del anfitrión.
 
 **¿Qué pasa si dos balas impactan al mismo tiempo?** La sala procesa una secuencia de colisiones de forma serial. Una baja se registra una vez; una víctima ya eliminada no vuelve a recibir daño en esa transición. No existe simultaneidad matemática perfecta en un tick discreto.
+
+## Ejemplo adicional: datos autoritativos y datos de presentación
+
+`presentation/interpolate` es una función pura: recibe dos instantáneas y una proporción, devuelve otro mapa y conserva los originales. Usa `reduce-kv`, `map`, `keep`, `assoc` y colecciones persistentes. Permite dibujar una bala en posiciones intermedias aunque el servidor publique menos veces que el monitor dibuja.
+
+Esto ejemplifica separación de responsabilidades y transparencia referencial. El mapa dibujado no decide daño: en red esa decisión pertenece a `engine/advance-shot`, ejecutado por el agente de sala. Una prueba verifica que interpolar no modifica daño ni posición autoritativa. Otras prueban que el búfer no restaura jugadores desconectados o proyectiles eliminados. Los átomos del cliente contienen el búfer y efectos locales; las transformaciones matemáticas siguen siendo funciones puras comprobables sin navegador.

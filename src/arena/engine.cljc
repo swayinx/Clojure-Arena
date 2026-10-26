@@ -200,7 +200,7 @@
                           (let [angle (+ (:angle p) a)
                                 sx (+ (:x p) (* 27 (cos angle)))
                                 sy (+ (:y p) (* 27 (sin angle)))]
-                            {:id (+ (:shot-seq w) i 1) :owner id :x sx :y sy
+                            {:id (+ (:shot-seq w) i 1) :owner id :x sx :y sy :origin-x sx :origin-y sy
                              :vx (* (:speed gun) (cos angle)) :vy (* (:speed gun) (sin angle))
                              :angle angle :damage damage :boosted boosted? :born now
                              :until (+ now 1400)}))

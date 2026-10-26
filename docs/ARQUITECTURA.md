@@ -148,3 +148,9 @@ El cliente transmite **intenciones**, no vida, daño, posición final ni bajas. 
 ## Qué no se implementa
 
 No se emplean P2P/WebRTC, rollback de combate, compensación de lag del servidor, base de datos, cuentas, balanceo entre PCs ni migración del anfitrión. La predicción local se limita a movimiento y dash. Las otras habilidades, impactos y bajas se confirman en el servidor. El juego está pensado para LAN y demostraciones pequeñas por túnel; una latencia alta seguirá notándose al disparar.
+
+## Presentación suave sin autoridad en el cliente
+
+`presentation.cljc` recibe mapas inmutables y devuelve copias destinadas exclusivamente al dibujo. `remember` guarda hasta ocho instantáneas y `sample` interpola su posición con un cursor aproximadamente 100 ms atrasado. `sample` conserva recursos y membresía del mundo más reciente: no puede restaurar jugadores desconectados, muertos o balas retiradas por un impacto. `engine.cljc` añade el origen del disparo a sus datos de presentación sin cambiar su colisión.
+
+El jugador local usa predicción y una fracción visual del siguiente paso. Los efectos tienen reloj local; la estimación visual de tiempos de habilidades suaviza correcciones pequeñas. Ninguno de estos valores se escribe en el estado autoritativo ni se envía como resultado al servidor. En entrenamiento, el navegador sí ejecuta el motor completo, porque no hay una partida compartida.

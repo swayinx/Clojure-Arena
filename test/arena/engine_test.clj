@@ -69,3 +69,16 @@
     (is (empty? (:pickups picked)))
     (is (= :rapid (get-in picked [:players "a" :weapon])))
     (is (= :pulse (get-in expired [:players "a" :weapon])))))
+
+(deftest projectile-origin-and-authoritative-impact
+  (let [w (-> (match) (assoc-in [:players "b" :x] 220) (assoc-in [:players "b" :y] 112))
+        fired (e/step w {"a" (assoc e/empty-input :fire true :ax 800 :ay 112)} 0.025 2025)
+        shot (first (:shots fired))
+        hit (-> fired (e/step {} 0.025 2050) (e/step {} 0.025 2075))]
+    (is (== 159 (:origin-x shot)))
+    (is (== 112 (:origin-y shot)))
+    (is (> (:x shot) (:origin-x shot)))
+    (is (= 100 (get-in fired [:players "b" :hp])))
+    (is (= 80 (get-in hit [:players "b" :hp])))
+    (is (empty? (:shots hit)))
+    (is (some #(= :hit (:kind %)) (:events hit)))))

@@ -6,16 +6,18 @@ Fecha: 26 de octubre de 2026. Las pruebas automáticas se ejecutaron contra el c
 
 | Comprobación | Resultado | Cómo repetir |
 |---|---|---|
-| Compilación oficial ClojureScript, optimización avanzada | Correcta, bundle de aproximadamente 281 KB sin comprimir | `bb build` |
+| Compilación oficial ClojureScript, optimización avanzada | Correcta, bundle de aproximadamente 299 KB sin comprimir | `bb build` |
 | Sintaxis del bundle | Sin error | `node --check public/client.js` |
 | Cliente compilado con DOM/Canvas simulados | Arranque, poderes, ulti, QR, pantalla completa, carga de 12 muestras, volumen y silencio; sin excepciones | `bb test-client` |
-| Reglas y frontera de red | 10 pruebas, 50 aserciones, 0 fallos | `bb test` |
+| Reglas y frontera de red | 16 pruebas, 87 aserciones, 0 fallos | `bb test` |
 | 20 clientes WebSocket, 5 salas de 4 | 15 comprobaciones correctas | `bb test-network`, con `bb serve` vacío en otra terminal |
 | Estados idénticos por tick | Confirmado para los 4 miembros de cada una de las 5 salas | Prueba de integración |
 | Límite de salas/plazas | Sexta sala y quinto jugador rechazados | Prueba de integración |
 | Inicio exclusivo del creador | Confirmado | Prueba de integración |
 | Aislamiento entre salas | Movimiento y membresía separados | Prueba de integración |
 | Conexión silenciosa y cierre de pestaña | 6 comprobaciones de presencia; elimina jugador, transfiere creador, actualiza plazas y elimina sala vacía | `ARENA_TEST_PRESENCE=1 bb test-network` |
+| Fluidez del bundle real (Canvas simulado) | Cuatro RAF consecutivos con bala avanzando entre paquetes; desaparece al confirmar impacto; coordenadas finitas y pila Canvas balanceada | `bb test-client` |
+| Tiempo e interpolación puros | Giros ±π, reaparición, jitter, 30/60/144 pasos/s, daño y membresía actuales | `bb test` |
 | Vista de jugadores desconectados | Espera y marcador eliminan miembros; ignoran otra sala y socket anterior; limpieza tras perder conexión | `bb test-client`, adaptadores simulados |
 | Salida de creador | Miembro eliminado y rol transferido | Prueba de integración |
 | Túnel real Cloudflare / HTTPS | `/health` y `/api/info` respondieron correctamente | `bb internet` |
@@ -24,7 +26,7 @@ Fecha: 26 de octubre de 2026. Las pruebas automáticas se ejecutaron contra el c
 | Salas LAN desde Internet | No se listan, no admiten unión ni creación por túnel | 6 comprobaciones de Internet correctas |
 | Audio OGG | 12 archivos decodificados con FFmpeg sin errores; HTTP entrega los bytes originales con `audio/ogg` | Archivos en `public/audio/` |
 | Procedencia de audio | Bytes idénticos a los ZIP descargados de Kenney; licencias incluidas | `docs/RECURSOS.md` |
-| HTML/recursos | Etiquetas balanceadas, 72 IDs únicos, referencias DOM válidas, cuatro SVG válidos | Comprobación estática |
+| HTML/recursos | Etiquetas balanceadas, 73 IDs únicos, referencias DOM válidas, cuatro SVG válidos | Comprobación estática |
 
 El túnel de prueba es temporal. Su URL no forma parte de la configuración permanente ni debe incluirse en el QR de la exposición. Crea uno nuevo al realizar la demostración.
 
@@ -115,3 +117,11 @@ PORT=8082 bb serve
 # Otra terminal:
 ARENA_TEST_URL=ws://localhost:8082/ws ARENA_TEST_PRESENCE=1 bb test-network
 ```
+
+## Revisión 0.2.3
+
+La regresión inicial de proyectiles produjo cuatro fallos: posiciones constantes entre paquetes y aparición incorrecta antes de nacer. Las pruebas pasan tras el cambio. El test de cliente ejecuta el bundle optimizado y captura las posiciones dibujadas, sin acceder a un navegador. Incluye modo de movimiento reducido. La integración de 20 clientes y la prueba de desconexión se repitieron contra el servidor actualizado en el puerto 8082.
+
+Las comprobaciones de túnel, audio y procedencia de recursos de la tabla corresponden a la entrega anterior; sus componentes no cambiaron en esta revisión. No se volvió a publicar un túnel para esta prueba.
+
+Revisión manual pendiente: abrir entrenamiento, mantener WASD + clic, probar Shift/Q/E/R/F, comparar partículas completas/reducidas, observar contador FPS y probar dos equipos con distintas conexiones. El acceso al navegador integrado sigue bloqueado por su política de origen; no se ha validado aquí el aspecto final ni la tasa real de fotogramas.

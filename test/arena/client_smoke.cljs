@@ -11,6 +11,9 @@
 (def clock (atom 0))
 (def frames (atom []))
 (def draws (atom 0))
+(def bullet-heads (atom []))
+(def canvas-depth (atom 0))
+(def reduced-motion-mode (atom false))
 (def console-errors (atom []))
 (def document-events (atom {}))
 (def audio-files (atom #{}))
@@ -38,7 +41,18 @@
     (set! (.-decodeAudioData self) (fn [bytes] (js/Promise.resolve bytes)))
     (set! (.-createBufferSource self) (fn [] #js {:connect noop :disconnect noop :start #(swap! audio-starts inc)}))
     self))
-(def context2d (js/Proxy. #js {} #js {:get (fn [target key] (or (aget target key) (fn [& _] (swap! draws inc))))}))
+(def context2d
+  (js/Proxy. #js {} #js {:get (fn [target key]
+                              (or (aget target key)
+                                  (fn [& args]
+                                    (swap! draws inc)
+                                    (doseq [arg args :when (number? arg)]
+                                      (check (js/Number.isFinite arg) (str "Canvas " key " recibió " arg)))
+                                    (case key
+                                      "save" (swap! canvas-depth inc)
+                                      "restore" (do (swap! canvas-depth dec) (check (>= @canvas-depth 0)))
+                                      "arc" (when (= 3.5 (nth args 2)) (swap! bullet-heads conj (vec (take 2 args))))
+                                      nil))))}))
 (defn element [id]
   (or (get @elements id)
       (let [callbacks (atom {}) classes (atom #{}) props (atom {}) children (atom [])
@@ -72,7 +86,7 @@
                   :localStorage #js {:getItem (fn [_] nil) :setItem noop}
                   :setTimeout (fn [& _] 1) :clearTimeout noop :setInterval (fn [f ms] (swap! intervals assoc ms f) 1)
                   :requestAnimationFrame #(reset! frames [%])
-                  :matchMedia (fn [_] #js {:matches false})
+                  :matchMedia (fn [_] (let [m #js {}] (js/Object.defineProperty m "matches" #js {:get #(boolean @reduced-motion-mode)}) m))
                   :addEventListener (fn [kind f] (swap! listeners assoc kind f))
                   :URLSearchParams js/URLSearchParams
                   :AudioContext mock-audio
@@ -95,6 +109,29 @@
 (defn tree-text [el]
   (str (.-textContent el) (apply str (map tree-text @(aget el "children")))))
 (defn receive! [message] ((.-onmessage @test-socket) #js {:data (pr-str message)}))
+(defn animation-checks! []
+  (click! "leave-game")
+  (receive! {:type :welcome :id "self" :info {:scope :lan} :rooms []})
+  (receive! {:type :joined :id "self" :code "ANIM01"})
+  (let [w (-> (e/world :arena 1000) (e/add-player "self" "Aquí" "brasa") (e/start-round 1000))
+        shot {:id 1 :owner "self" :x 300 :y 300 :origin-x 250 :origin-y 300
+              :angle 0 :vx 600 :vy 0 :born 900 :until 2400 :damage 20}
+        snap (fn [t x] {:type :snapshot :code "ANIM01" :host "self" :name "Animación" :visibility :lan
+                       :world (assoc w :time t :shots [(assoc shot :x x)])})]
+    (receive! (snap 1000 300)) (receive! (snap 1050 330)) (receive! (snap 1100 360))
+    (reset! bullet-heads []) (step! 4)
+    (let [xs (mapv first @bullet-heads)]
+      (check (= 4 (count xs)))
+      (check (apply < xs) (str "La bala debe avanzar en cada RAF entre instantáneas: " xs))
+      (check (< (last xs) 360) "El render no adelanta la bala más allá del servidor"))
+    (reset! bullet-heads [])
+    (receive! (assoc-in (snap 1150 390) [:world :shots] [])) (step! 1)
+    (check (empty? @bullet-heads) "El impacto autoritativo retira la bala inmediatamente")
+    (check (= "100 / 100" (text "health-text")))
+    (reset! reduced-motion-mode true) (step! 3) (reset! reduced-motion-mode false)
+    (check (zero? @canvas-depth) "Los save/restore de Canvas quedan balanceados")
+    (println "ANIMACIÓN CLIENTE: balas continuas entre paquetes, retirada al impacto, Canvas finito y movimiento reducido correctos.")))
+
 (defn presence-checks! []
   (click! "leave-game")
   (receive! {:type :welcome :id "self" :info {:scope :lan} :rooms []})
@@ -158,6 +195,7 @@
 (set! (.-checked (element "sound-setting")) false)
 ((get @(aget (element "sound-setting") "callbacks") "change"))
 (check (zero? (last @volume-values)))
+(animation-checks!)
 (presence-checks!)
 (check (empty? @console-errors))
 (println "CLIENTE: Canvas, Q, Shift, F, reinicio, QR, pantalla completa, 12 muestras, volumen y silencio correctos.")

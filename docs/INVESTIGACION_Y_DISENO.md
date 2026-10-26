@@ -105,3 +105,24 @@ La captura del 26 de octubre mostró un mapa pequeño dentro de una franja muy a
 Nova conserva 650 ms de aviso y el radio de daño de 125: un borde fijo marca el área, las chispas convergen y la detonación dibuja núcleo, rayo vertical y onda expansiva. El efecto se limita a esa zona, con menor movimiento cuando el sistema lo solicita.
 
 Para sonido se consultaron las publicaciones del autor ([Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds), [Digital Audio](https://kenney.nl/assets/digital-audio)), su publicación en [OpenGameArt](https://opengameart.org/content/sci-fi-sounds) y experiencias de desarrolladores en [r/gamedev](https://www.reddit.com/r/gamedev/comments/1tu4lm8/sourcing_sound_effects/). Las recomendaciones comunitarias orientan la búsqueda; la licencia se verificó en las páginas y archivos del autor. Se escogieron muestras cortas, locales y con categorías distintas por acción. No se afirma haber realizado escucha comparativa desde la herramienta.
+
+## Fluidez y escenario: revisión 0.2.3
+
+Se reprodujo el salto: cinco fotogramas entre dos instantáneas dibujaban la bala en la misma posición final. Ahora `presentation.cljc` interpola proyectiles por identidad y también posiciones y ángulos de jugadores. Los giros usan el camino corto al cruzar ±π. El servidor sigue calculando impacto, daño y desaparición; el cliente nunca envía una colisión.
+
+| Referencia consultada | Aplicación concreta |
+|---|---|
+| [Entity interpolation, Gabriel Gambetta](https://www.gabrielgambetta.com/entity-interpolation.html) | Separar frecuencia de red y dibujo. Interpolar posiciones entre estados confirmados. |
+| [Snapshot interpolation, Glenn Fiedler](https://gafferongames.com/post/snapshot_interpolation/) y [fuente del autor en GitHub](https://github.com/mas-bandwidth/gafferongames/blob/main/content/post/snapshot_interpolation.md) | Búfer acotado a ocho instantáneas, cursor con objetivo de 100 ms de retraso y ajuste gradual ante jitter. El valor es una decisión de este juego, no una garantía universal. |
+| [Frame rate independent damping, Rory Driscoll](https://www.rorydriscoll.com/2016/03/07/frame-rate-independent-damping-using-lerp/) | Amortiguación exponencial por tiempo para cámara, transición de poses y corrección local. Partículas con desplazamiento integrado, comprobado a 30, 60 y 144 pasos/s. |
+| [Optimizing Canvas, MDN](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Tutorial/Optimizing_canvas) | Suelo detallado cacheado y una sola copia por fotograma. Sin añadir filtros grandes ni dependencias. |
+| [Clarity in League, equipo de Riot](https://www.leagueoflegends.com/en-us/news/dev/clarity-in-league/) | Fondo con contraste bajo, peligros y proyectiles prioritarios, borde de Nova acorde a su radio real. |
+| [CSS @property, MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@property) | Carga radial del HUD interpolada entre actualizaciones; sin transición en movimiento reducido. |
+
+También se consultaron críticas de jugadores/desarrolladores en [r/gamedev sobre cámara y legibilidad](https://www.reddit.com/r/gamedev/comments/1wxhkwo/how_much_camera_movement_is_juice_before_it/) y [r/gamedevscreens sobre ruido visual](https://www.reddit.com/r/gamedevscreens/comments/1wjo2sv/does_anything_distract_you_visually/). Son opiniones y experiencias, no mediciones de este juego. Orientaron el pulso ambiental tenue, límites de partículas y cámara ajustable, evitando que la decoración compita con los ataques.
+
+El personaje propio conserva predicción de movimiento/dash; se dibuja también la fracción restante del tick. Las correcciones pequeñas se amortiguan; una reaparición o un cambio grande se aplica directamente. No se interpola vida, membresía ni daño: recibir una baja, salida o impacto elimina inmediatamente la entidad, aunque aún figure en el búfer.
+
+Las partículas, retroceso, destellos y cámara usan un reloj local independiente de la red. El paso del personaje depende de distancia recorrida, el escudo crece y se desvanece, la curación tiene cruces ascendentes, el dash deforma según dirección y la reaparición tiene entrada breve. El escenario suma paneles, rejillas, guías de suelo, iluminación lenta y doce motas decorativas. Modo reducido conserva la información del combate.
+
+**Límites:** el búfer añade retraso visual a otros jugadores y balas; puede agotar sus muestras y detenerse con jitter intenso. Se prefiere eso a extrapolar un proyectil atravesando una pared. No hay compensación de impactos por latencia ni cambio de WebSocket/TCP. Un disparo de recorrido muy corto puede impactar antes de aparecer en el búfer: el efecto de impacto sí se presenta al confirmarlo. Los FPS reales y el aspecto final requieren probar el navegador; las pruebas con Canvas simulado no miden GPU ni calidad visual.

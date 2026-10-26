@@ -184,6 +184,14 @@ La prueba comprueba cerrar una conexión, volver a ocupar su plaza, dejar un cli
 
 Resultados y límites de las comprobaciones: [docs/PRUEBAS.md](docs/PRUEBAS.md).
 
+### Fluidez y diagnóstico
+
+La versión 0.2.3 dibuja balas y jugadores entre actualizaciones de red, mantiene un búfer visual de aproximadamente 100 ms y suaviza giros y correcciones pequeñas. Las colisiones y el daño online siguen siendo del servidor. El movimiento propio se predice localmente. El entrenamiento usa interpolación entre pasos locales de 25 ms.
+
+En combate, **FPS** indica fotogramas dibujados por segundo; **ms** indica ida y vuelta de red. FPS bajos apuntan a carga de renderizado o limitación del navegador; ping alto afecta la respuesta online aunque el dibujo sea fluido. No son medidas intercambiables. Prueba «Partículas: reducidas» y baja la vibración en Ajustes si tu equipo lo necesita.
+
+Después de actualizar: detén el servidor anterior con Ctrl+C, ejecuta `bb serve` (o `bb internet`) y recarga con Ctrl+Shift+R. No abras `public/index.html` como `file://`. Al reiniciar el túnel, comparte el nuevo enlace.
+
 ## 7. Archivos y entrega del curso
 
 | Archivo | Responsabilidad |
@@ -191,6 +199,7 @@ Resultados y límites de las comprobaciones: [docs/PRUEBAS.md](docs/PRUEBAS.md).
 | `src/arena/engine.cljc` | Reglas puras e inmutables, compartidas entre Clojure y ClojureScript |
 | `src/arena/server.clj` | Agentes, salas, HTTP, WebSocket y túnel |
 | `src/arena/client.cljs` | Controles, interfaz, sincronización y predicción de movimiento |
+| `src/arena/presentation.cljc` | Interpolación pura de jugadores/balas, búfer y amortiguación por tiempo |
 | `src/arena/view.cljs` | Canvas, partículas, sprites y cámara |
 | `src/arena/audio.cljs` | Muestras de sonido, caché, mezcla y volumen |
 | `public/index.html`, `public/style.css`, `public/combat.css` | Estructura y presentación de la página |

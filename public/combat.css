@@ -1,3 +1,15 @@
+/* Interpolación de la carga radial entre actualizaciones del HUD. */
+@property --progress {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+#juego .ability { transition: --progress 60ms linear, border-color 120ms ease; }
+#render-stats { min-width: 5ch; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  #juego .ability { transition: none; }
+}
+
 /* Combate: priorizar la altura del mapa; las instrucciones largas viven en Ayuda. */
 .app:has(#juego.active) {
   max-width: none;
@@ -356,7 +368,8 @@
   }
   #juego .match-bar .eyebrow,
   #juego .match-clock span,
-  #juego #net-stats {
+  #juego #net-stats,
+  #juego #render-stats {
     display: none;
   }
   #juego .match-bar b {

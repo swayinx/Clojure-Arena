@@ -1,6 +1,6 @@
 (ns arena.client
   "Entrada del navegador, HUD, predicción local y transporte WebSocket/EDN."
-  (:require [arena.engine :as e] [arena.view :as view]
+  (:require [arena.engine :as e] [arena.view :as view] [arena.presentation :as visual]
             [cljs.reader :as reader] [clojure.string :as str]))
 
 (def by-id (memoize #(.getElementById js/document %)))
@@ -25,6 +25,7 @@
 (defonce last-frame (atom 0))
 (defonce accumulator (atom 0))
 (defonce last-hud (atom 0))
+(defonce frame-stats (atom {:since 0 :frames 0 :fps 0}))
 (defonce room-render-key (atom nil))
 (defonce score-render-key (atom nil))
 (defonce announced-event (atom 0))
@@ -170,6 +171,7 @@
       (text! "match-mode" (if training? "ENTRENAMIENTO" (str "SALA " (:code @client))))
       (text! "match-goal" (if training? "PRUEBA TUS HABILIDADES" "12 BAJAS / 3 MIN"))
       (text! "net-stats" (if training? "LOCAL" (str (js/Math.round (:rtt @client)) " ms")))
+      (text! "render-stats" (str (:fps @frame-stats) " FPS"))
       (hidden! "restart-game" (not training?))
       (hidden! "death-overlay" (:alive p))
       (when-not (:alive p) (text! "respawn-time" (.toFixed (max 0 (/ (- (:respawn-at p) now) 1000)) 1)))
@@ -219,7 +221,7 @@
         :boost (when (= you (:player event)) (text! "game-message" "Potencia activa 6 s. +15 de daño por proyectil."))
         nil))
     (when (seq events) (reset! announced-event (:event-seq world)))
-    (view/consume! world you now)))
+    (view/consume! world you (perf))))
 
 (defn predicted-player [p input dt now]
   (if (and p (:alive p))
@@ -227,16 +229,16 @@
           w (if (some #{:dash} (:actions input)) (e/activate w (:id p) :dash input) w)]
       (e/move-player (get-in w [:players (:id p)]) input dt now)) p))
 (defn begin-match! []
-  (view/reset!fx) (reset! announced-event 0) (reset! accumulator 0) (reset! score-render-key nil)
+  (view/reset!fx) (reset! frame-stats {:since (perf) :frames 0 :fps 0}) (reset! announced-event 0) (reset! accumulator 0) (reset! score-render-key nil)
   (clear! (by-id "kill-feed")) (hidden! "scoreboard" true) (screen! "juego") (view/resume-audio!))
 (defn start-training! []
   (when (= :online (:mode @client)) (send! {:type :leave}))
   (save-preferences!)
   (let [world (e/training (:name (identity-message)) (:skin @client) 0)]
-    (swap! client assoc :mode :training :world world :previous world :you "you" :code nil :pending [] :predicted nil)
+    (swap! client assoc :mode :training :world world :previous world :you "you" :code nil :pending [] :predicted nil :snapshots [] :render-time nil :display-time nil :correction {:x 0 :y 0})
     (begin-match!) (update-hud! world 0) (announce! "ENTRENAMIENTO · NOVA LISTA EN F")))
 (defn clear-room! []
-  (swap! client assoc :mode :none :world nil :previous nil :code nil :host nil :pending [] :predicted nil)
+  (swap! client assoc :mode :none :world nil :previous nil :code nil :host nil :pending [] :predicted nil :snapshots [] :render-time nil :display-time nil :correction {:x 0 :y 0})
   (reset! room-render-key nil) (reset! score-render-key nil)
   (doseq [id ["lobby-players" "score-rows" "kill-feed"]] (clear! (by-id id)))
   (hidden! "scoreboard" true))
@@ -244,14 +246,6 @@
   (when (= :online (:mode @client)) (send! {:type :leave}))
   (clear-room!)
   (screen! "inicio") (send! {:type :list}))
-
-(defn interpolate [previous current alpha]
-  (reduce-kv
-    (fn [w id p]
-      (if-let [old (get-in previous [:players id])]
-        (if (and (= (:alive old) (:alive p)) (< (e/distance (:x old) (:y old) (:x p) (:y p)) 110))
-          (-> w (assoc-in [:players id :x] (+ (:x old) (* alpha (- (:x p) (:x old)))))
-                (assoc-in [:players id :y] (+ (:y old) (* alpha (- (:y p) (:y old)))))) w) w)) current (:players current)))
 
 (declare connect!)
 (defn receive! [message]
@@ -278,9 +272,17 @@
             ack (get (:acks message) (:you s) -1)
             pending (filterv #(> (:seq %) ack) (:pending s))
             p (reduce (fn [p h] (predicted-player p (:input h) 0.025 (:time h)))
-                      (get-in w [:players (:you s)]) pending)]
+                      (get-in w [:players (:you s)]) pending)
+            old-p (:predicted s)
+            correction (if (and (not starting?) (visual/same-life? old-p p)
+                                (< (e/distance (:x old-p) (:y old-p) (:x p) (:y p)) 64))
+                         {:x (e/clamp (+ (get-in s [:correction :x] 0) (- (:x old-p) (:x p))) -64 64)
+                          :y (e/clamp (+ (get-in s [:correction :y] 0) (- (:y old-p) (:y p))) -64 64)} {:x 0 :y 0})]
         (swap! client assoc :world w :previous (or old w) :received-at t :pending pending :predicted p
-               :code (:code message) :host (:host message) :name (:name message) :visibility (:visibility message))
+               :code (:code message) :host (:host message) :name (:name message) :visibility (:visibility message)
+               :snapshots (visual/remember (if starting? [] (:snapshots s)) w)
+               :render-time (when-not starting? (:render-time s))
+               :display-time (when-not starting? (:display-time s)) :correction correction)
         (when starting? (begin-match!))
         (when (or (= :waiting (:phase w)) (= "sala" (:screen @client))) (refresh-lobby!))
         (when (= :finished (:phase w))
@@ -434,17 +436,31 @@
   (let [elapsed (min 100 (max 0 (- now @last-frame)))]
     (reset! last-frame now)
     (when (and (= "juego" (:screen @client)) (:world @client))
+      (swap! frame-stats update :frames inc)
+      (when (>= (- now (:since @frame-stats)) 1000)
+        (swap! frame-stats #(assoc % :fps (js/Math.round (/ (* 1000 (:frames %)) (- now (:since %)))) :since now :frames 0)))
       (swap! accumulator + elapsed)
       (loop [] (when (>= @accumulator e/step-ms) (simulation-step!) (swap! accumulator - e/step-ms) (recur)))
-      (let [{:keys [world previous mode you predicted received-at]} @client
-            t (if (= mode :training) (+ (:time world) @accumulator) (server-time))
-            alpha (if (= mode :training) (/ @accumulator e/step-ms) (e/clamp (/ (- now received-at) 50) 0 1))
-            display (interpolate previous world alpha)
-            display (if (and (= mode :online) predicted)
-                      (assoc-in display [:players you]
-                                (merge (get-in display [:players you])
-                                       (select-keys predicted [:x :y :angle :moving :dash-until :dash-dir]))) display)]
-        (view/draw! display you @mouse t (/ elapsed 1000))
+      (let [{:keys [world previous mode you predicted received-at snapshots render-time display-time correction]} @client
+            training? (= mode :training)
+            t (if training? (+ (:time world) @accumulator) (visual/follow-time display-time (server-time) elapsed))
+            cursor (when-not training? (visual/advance-clock render-time (:time world) (- now received-at) elapsed))
+            display (if training? (visual/interpolate previous world (/ @accumulator e/step-ms))
+                        (visual/sample snapshots cursor world))
+            correction (when-not training? (into {} (map (fn [[k v]] [k (visual/damp v 0 22 (/ elapsed 1000))]) correction)))
+            ;; Fracción de tick solo visual: la simulación sigue a 40 Hz.
+            local (when (and (not training?) predicted (= :playing (:phase world)))
+                    (predicted-player predicted (assoc (controls) :actions []) (/ @accumulator 1000) t))
+            display (if local
+                      (update-in display [:players you] merge
+                                 (select-keys local [:x :y :angle :moving :dash-until :dash-dir])
+                                 {:x (+ (:x local) (:x correction 0)) :y (+ (:y local) (:y correction 0))}) display)
+            display (if (get-in display [:players you :alive])
+                      (assoc-in display [:players you :angle]
+                                (e/atan2 (- (:y @mouse) (get-in display [:players you :y]))
+                                         (- (:x @mouse) (get-in display [:players you :x])))) display)]
+        (when-not training? (swap! client assoc :render-time cursor :display-time t :correction correction))
+        (view/draw! display you @mouse t (/ elapsed 1000) now)
         (when (> (- now @last-hud) 60) (update-hud! world t) (reset! last-hud now))))
     (js/requestAnimationFrame tick)))
 
