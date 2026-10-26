@@ -1,15 +1,13 @@
 {
   "name": "clojure-arena",
+  "version": "0.2.0",
   "private": true,
-  "type": "module",
+  "description": "Arena funcional multijugador en Clojure y ClojureScript",
   "scripts": {
-    "dev": "npm run build && python3 -m http.server 3000 --directory public --bind 0.0.0.0",
-    "build": "squint compile src/arena/client.cljs --output-dir build && esbuild build/src/arena/client.mjs --bundle --format=iife --minify --outfile=public/client.js",
-    "preview": "npm run build && python3 -m http.server 8080 --directory public",
-    "lint": "npm run build"
-  },
-  "devDependencies": {
-    "esbuild": "^0.25.0",
-    "squint-cljs": "0.15.212"
+    "dev": "bb dev",
+    "start": "bb serve",
+    "preview": "bb serve",
+    "build": "bb build",
+    "test": "bb test"
   }
 }

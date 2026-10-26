@@ -1,0 +1,8 @@
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.3"}
+        http-kit/http-kit {:mvn/version "2.8.1"}}
+ :aliases
+ {:serve {:main-opts ["-m" "arena.server"]}
+  :build {:extra-deps {org.clojure/clojurescript {:mvn/version "1.12.145"}}
+          :main-opts ["-m" "cljs.main" "-co" "build.edn" "-c" "arena.client"]}
+  :test {:extra-paths ["test"] :main-opts ["-m" "arena.test-runner"]}}}

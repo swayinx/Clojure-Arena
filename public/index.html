@@ -1,82 +1,424 @@
 <!doctype html>
 <html lang="es">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101514">
-  <title>Clojure Arena</title>
-  <meta name="description" content="Arena de combate táctico individual en ClojureScript con cuatro personajes, dash, escudo, curación, daño aumentado y blancos regenerables.">
-  <meta property="og:title" content="Clojure Arena">
-  <meta property="og:description" content="Arena de combate táctico individual en ClojureScript con cuatro personajes, dash, escudo, curación, daño aumentado y blancos regenerables.">
-  <meta property="og:type" content="website">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
-  <script defer src="client.js"></script>
-</head>
-<body>
-<div class="shell">
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark">CA</span><span>CLOJURE <b>ARENA</b><small>PRUEBA LOCAL DE COMBATE</small></span></div>
-    <span class="build-label">PROTOTIPO JUGABLE PARA UNA PERSONA</span>
-  </header>
-  <main>
-    <section id="inicio" class="screen active">
-      <div class="intro">
-        <span class="eyebrow">SALA DE ENTRENAMIENTO</span>
-        <h1>ENTRA A LA <em>ARENA</em></h1>
-        <p>Prueba el movimiento fluido, el impulso evasivo (Dash), la puntería, los disparos y los poderes tácticos. Los blancos responden al fuego y se regeneran tras ser destruidos.</p>
-      </div>
-      <div class="setup-grid">
-        <div class="character-panel">
-          <div class="panel-title"><span>ELIGE TU PERSONAJE</span><small>Todos cuentan con las mismas habilidades</small></div>
-          <div class="fighter-cards">
-            <button class="fighter-card active" data-fighter="brasa"><span class="sprite brasa"></span><b>BRASA</b><small>Traje carmesí</small></button>
-            <button class="fighter-card" data-fighter="chispa"><span class="sprite chispa"></span><b>CHISPA</b><small>Traje turquesa</small></button>
-            <button class="fighter-card" data-fighter="mora"><span class="sprite mora"></span><b>MORA</b><small>Traje violeta</small></button>
-            <button class="fighter-card" data-fighter="bastion"><span class="sprite bastion"></span><b>BASTIÓN</b><small>Traje ámbar</small></button>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#101719" />
+    <title>Clojure Arena</title>
+    <meta
+      name="description"
+      content="Arena multijugador para cuatro. Dash, escudos, armas y una nova decisiva. Clojure + ClojureScript."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="vendor/qrcodegen.js"></script>
+    <script defer src="client.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Clojure Arena, inicio"
+          ><span class="brand-mark">CA</span
+          ><span>CLOJURE <b>ARENA</b></span></a
+        >
+        <div class="top-actions">
+          <span id="connection" class="connection">CONECTANDO</span
+          ><button id="help-open" class="quiet">CÓMO JUGAR</button
+          ><button id="settings-open" class="quiet">AJUSTES</button
+          ><button id="fullscreen" class="quiet" title="Pantalla completa">
+            AMPLIAR
+          </button>
+        </div>
+      </header>
+      <main>
+        <section
+          id="inicio"
+          class="screen home-screen active"
+          aria-label="Inicio"
+        >
+          <div class="home-stage">
+            <div class="hero-copy">
+              <p class="eyebrow">
+                <span class="status-dot"></span> COMBATE PARA 2–4 JUGADORES
+              </p>
+              <h1>UN ÚLTIMO<br /><em>IMPULSO.</em></h1>
+              <p class="hero-description">
+                Muévete. Esquiva. Cambia la partida.<br />Doce bajas o tres
+                minutos. Tu arena, tus reglas.
+              </p>
+            </div>
+            <div class="fighters-heading">
+              <span>01 / ELIGE TU PERSONAJE</span
+              ><small>Mismas habilidades. Tu propio estilo.</small>
+            </div>
+            <div class="fighter-cards" role="group" aria-label="Personaje">
+              <button
+                class="fighter-card active"
+                data-fighter="brasa"
+                aria-pressed="true"
+                style="--fighter: #ff9474"
+              >
+                <span class="fighter-number">01</span
+                ><span class="sprite brasa"></span><b>BRASA</b
+                ><small>FUEGO EN EL PULSO</small>
+              </button>
+              <button
+                class="fighter-card"
+                data-fighter="chispa"
+                aria-pressed="false"
+                style="--fighter: #76e5d1"
+              >
+                <span class="fighter-number">02</span
+                ><span class="sprite chispa"></span><b>CHISPA</b
+                ><small>REFLEJOS ELÉCTRICOS</small>
+              </button>
+              <button
+                class="fighter-card"
+                data-fighter="mora"
+                aria-pressed="false"
+                style="--fighter: #c6a2ff"
+              >
+                <span class="fighter-number">03</span
+                ><span class="sprite mora"></span><b>MORA</b
+                ><small>CALMA BAJO PRESIÓN</small>
+              </button>
+              <button
+                class="fighter-card"
+                data-fighter="bastion"
+                aria-pressed="false"
+                style="--fighter: #f6ce78"
+              >
+                <span class="fighter-number">04</span
+                ><span class="sprite bastion"></span><b>BASTIÓN</b
+                ><small>FIRME HASTA EL FINAL</small>
+              </button>
+            </div>
+            <div class="training-entry">
+              <div>
+                <b>PRIMERO, SIENTE EL COMBATE.</b
+                ><small>Entrena a solas. Nova cargada desde el inicio.</small>
+              </div>
+              <button id="start-game" class="primary">
+                ENTRENAR <span>→</span>
+              </button>
+            </div>
           </div>
+          <aside class="connect-panel">
+            <div class="panel-heading">
+              <span class="eyebrow">02 / JUEGA CON AMIGOS</span
+              ><span class="tiny">4 POR SALA</span>
+            </div>
+            <label class="field"
+              >TU NOMBRE<input
+                id="player-name"
+                maxlength="18"
+                placeholder="Jugador"
+                autocomplete="nickname"
+                value="Jugador"
+            /></label>
+            <div class="create-fields">
+              <label class="field"
+                >NOMBRE DE SALA<input
+                  id="room-name"
+                  maxlength="18"
+                  value="Arena de amigos" /></label
+              ><label class="field"
+                >ACCESO<select id="room-visibility">
+                  <option value="lan">Misma Wi-Fi</option>
+                  <option value="internet">Internet</option>
+                </select></label
+              >
+            </div>
+            <button id="create-room" class="primary wide" disabled>
+              CREAR SALA
+            </button>
+            <p id="host-hint" class="hint">
+              La PC anfitriona ejecuta el servidor. Los demás solo abren su
+              enlace.
+            </p>
+            <div class="rooms-title">
+              <h2>SALAS ABIERTAS</h2>
+              <button id="refresh-rooms" class="text-button">ACTUALIZAR</button>
+            </div>
+            <div id="room-list" class="room-list">
+              <div class="empty-rooms">Buscando salas en este anfitrión…</div>
+            </div>
+            <form id="join-form" class="join-form">
+              <label class="sr-only" for="room-code">Código de sala</label
+              ><input
+                id="room-code"
+                placeholder="CÓDIGO DE SALA"
+                maxlength="6"
+                autocomplete="off"
+              /><button id="join-room" class="secondary" disabled>
+                UNIRME
+              </button>
+            </form>
+            <button id="host-help" class="text-button host-link">
+              ¿CÓMO CREO MI ANFITRIÓN?
+            </button>
+          </aside>
+        </section>
+
+        <section
+          id="sala"
+          class="screen room-screen"
+          aria-label="Sala de espera"
+        >
+          <div class="room-top">
+            <div>
+              <p id="room-mode" class="eyebrow">MISMA WI-FI</p>
+              <h1 id="lobby-title">ARENA DE AMIGOS</h1>
+              <p class="room-subtitle">
+                Comparte el enlace. Reúne a tu equipo. Que gane el mejor.
+              </p>
+            </div>
+            <button id="leave-room" class="secondary">SALIR DE LA SALA</button>
+          </div>
+          <div id="lobby-players" class="lobby-players"></div>
+          <div class="room-bottom">
+            <div class="share-panel">
+              <span class="eyebrow">INVITACIÓN</span>
+              <div class="invite-row">
+                <strong id="lobby-code">------</strong
+                ><button id="copy-invite" class="secondary">
+                  COPIAR ENLACE</button
+                ><button id="qr-open" class="quiet">VER QR</button>
+              </div>
+              <input
+                id="invite-url"
+                readonly
+                aria-label="Enlace de invitación"
+              />
+              <p id="invite-hint" class="hint"></p>
+            </div>
+            <div class="launch-panel">
+              <span id="lobby-status">Esperando jugadores…</span
+              ><button id="start-round" class="primary">INICIAR PARTIDA</button
+              ><small
+                >2–4 jugadores · 3 minutos · primero en llegar a 12 bajas</small
+              >
+            </div>
+          </div>
+        </section>
+
+        <section id="juego" class="screen game-screen" aria-label="Partida">
+          <div class="match-bar">
+            <div>
+              <span id="match-mode" class="eyebrow">ENTRENAMIENTO</span
+              ><b id="match-title">PATIO CERO</b>
+            </div>
+            <div class="match-clock">
+              <strong id="match-time">LIBRE</strong
+              ><span id="match-goal">PRUEBA TUS HABILIDADES</span>
+            </div>
+            <div class="match-actions">
+              <span id="net-stats" class="tiny">LOCAL</span
+              ><button id="score-toggle" class="quiet">
+                MARCADOR <kbd>TAB</kbd></button
+              ><button id="leave-game" class="quiet">SALIR</button>
+            </div>
+          </div>
+          <div class="arena-stage">
+            <div class="arena-frame">
+              <canvas
+                id="arena"
+                width="960"
+                height="600"
+                tabindex="0"
+                aria-label="Arena. WASD para moverte, ratón y clic para disparar, Shift para dash, Q escudo, E curación, R potencia y F nova."
+              ></canvas>
+              <div id="announcer" class="announcer" aria-live="polite"></div>
+              <div id="kill-feed" class="kill-feed"></div>
+              <div id="death-overlay" class="death-overlay" hidden>
+                <span>TE ELIMINARON</span><strong id="respawn-time">2.5</strong
+                ><small>VOLVERÁS A LA ARENA</small>
+              </div>
+            </div>
+          </div>
+          <div id="scoreboard" class="scoreboard" hidden>
+            <div class="scoreboard-head">
+              <h2 id="scoreboard-title">MARCADOR</h2>
+              <button id="score-close" class="quiet">CERRAR</button>
+            </div>
+            <div class="score-labels">
+              <span>JUGADOR</span><span>BAJAS</span><span>MUERTES</span
+              ><span>DAÑO</span>
+            </div>
+            <div id="score-rows"></div>
+            <div id="round-actions" hidden>
+              <p id="winner-text"></p>
+              <button id="rematch" class="primary">VOLVER A JUGAR</button
+              ><button id="return-room" class="secondary">
+                VOLVER A LA SALA
+              </button>
+            </div>
+          </div>
+          <div class="combat-hud">
+            <div class="vitals">
+              <div class="vitals-name">
+                <b id="hud-name">BRASA</b><span id="score">0 BAJAS</span>
+              </div>
+              <div class="meter-label">
+                <span>VIDA</span><strong id="health-text">100 / 100</strong>
+              </div>
+              <div class="meter"><i id="health-bar"></i></div>
+              <div class="meter-label shield-label">
+                <span>ESCUDO</span><strong id="shield-text">0 / 60</strong>
+              </div>
+              <div class="meter shield"><i id="shield-bar"></i></div>
+              <span id="weapon-label">PULSO · CLIC PARA DISPARAR</span>
+            </div>
+            <div id="abilities" class="abilities"></div>
+          </div>
+          <div class="combat-help">
+            <span
+              ><kbd>WASD</kbd> MOVER
+              <span class="mouse-help"
+                >· RATÓN APUNTAR · CLIC DISPARAR</span
+              ></span
+            ><span id="game-message" role="status"
+              >Shift te hace inmune solo durante el dash.</span
+            ><button id="restart-game" class="text-button">
+              REINICIAR PRUEBA
+            </button>
+          </div>
+        </section>
+      </main>
+      <footer>
+        <span>PATIO CERO / CLOJURE ARENA</span
+        ><span id="footer-state">CLOJURE + CLOJURESCRIPT</span
+        ><span>LP · 2026</span>
+      </footer>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="help-dialog">
+      <div class="dialog-top">
+        <span class="eyebrow">GUÍA DE COMBATE</span
+        ><button data-close="help-dialog" class="quiet">CERRAR</button>
+      </div>
+      <h2>CADA SEGUNDO CUENTA.</h2>
+      <div class="help-grid">
+        <div>
+          <kbd>W A S D</kbd><b>Muévete</b>
+          <p>
+            Ratón para apuntar. Mantén clic izquierdo para disparar. La
+            cobertura detiene las balas.
+          </p>
         </div>
-        <aside class="start-panel">
-          <span class="eyebrow">CONTROLES</span>
-          <div class="control-row"><kbd>W A S D</kbd><span>Moverse (diagonal normalizada)</span></div>
-          <div class="control-row"><kbd>RATÓN</kbd><span>Apuntar</span></div>
-          <div class="control-row"><kbd>CLIC IZQ</kbd><span>Mantener para disparar</span></div>
-          <div class="control-row"><kbd>SHIFT</kbd><span>Dash e inmunidad breve (2,5 s)</span></div>
-          <div class="control-row"><kbd>Q</kbd><span>Escudo 60 pts / 5 s (10 s)</span></div>
-          <div class="control-row"><kbd>E</kbd><span>Curación +35 vida (12 s)</span></div>
-          <div class="control-row"><kbd>R</kbd><span>Daño aumentado / 6 s (13 s)</span></div>
-          <button id="start-game" class="primary-button">CREAR SALA DE PRUEBA</button>
-          <small>Esta prueba funciona sin Internet y sin servidor.</small>
-        </aside>
-      </div>
-    </section>
-    <section id="juego" class="screen">
-      <div class="game-heading">
-        <div><span class="eyebrow">SALA LOCAL · UNA PERSONA</span><h2>ARENA DE PRUEBA</h2></div>
-        <button id="leave-game" class="secondary-button">VOLVER AL INICIO</button>
-      </div>
-      <div class="game-grid">
-        <div class="arena-wrap">
-          <canvas id="arena" width="960" height="600" tabindex="0" aria-label="Arena de entrenamiento"></canvas>
-          <div class="arena-note">WASD MOVER · SHIFT DASH (INMUNE 0,18 S) · RATÓN APUNTAR · CLIC DISPARAR · Q ESCUDO · E CURAR · R DAÑO EXTRA</div>
+        <div>
+          <kbd>SHIFT</kbd><b>Dash</b>
+          <p>
+            180 ms de impulso e inmunidad. Recarga: 2,5 s. Usa WASD para elegir
+            la dirección.
+          </p>
         </div>
-        <aside class="hud">
-          <span class="eyebrow">TU PERSONAJE</span><h3 id="hud-name">BRASA</h3>
-          <div class="meter-label"><span>VIDA</span><strong id="health-text">100 / 100</strong></div><div class="meter"><span id="health-bar"></span></div>
-          <div class="meter-label"><span>ESCUDO</span><strong id="shield-text">0 / 60</strong></div><div class="meter shield"><span id="shield-bar"></span></div>
-          <div class="score"><span>BLANCOS DESTRUIDOS</span><strong id="score">0</strong></div>
-          <div class="power-heading">HABILIDADES Y PODERES</div>
-          <div class="power-row" id="power-dash"><kbd>SHIFT</kbd><span><b>DASH EVASIVO</b><small>Impulso e inmunidad (0,18 s)</small></span><strong id="dash-cooldown">LISTO</strong></div>
-          <div class="power-row" id="power-shield"><kbd>Q</kbd><span><b>ESCUDO</b><small>Absorbe 60 de daño por 5 s</small></span><strong id="shield-cooldown">LISTO</strong></div>
-          <div class="power-row" id="power-heal"><kbd>E</kbd><span><b>CURACIÓN</b><small>Recupera 35 de vida</small></span><strong id="heal-cooldown">LISTO</strong></div>
-          <div class="power-row" id="power-boost"><kbd>R</kbd><span><b>DAÑO EXTRA</b><small>Disparos potenciados por 6 s</small></span><strong id="boost-cooldown">LISTO</strong></div>
-          <p id="game-message" class="game-message" role="status">Acércate a los blancos y dispara.</p>
-          <button id="restart-game" class="secondary-button restart">REINICIAR PRUEBA</button>
-        </aside>
+        <div>
+          <kbd>Q</kbd><b>Escudo</b>
+          <p>
+            Absorbe 60 de daño durante 5 s. Recarga: 10 s desde la activación.
+          </p>
+        </div>
+        <div>
+          <kbd>E</kbd><b>Curación</b>
+          <p>
+            Recupera 35 de vida. Recarga: 12 s. No se consume si ya tienes toda
+            la vida.
+          </p>
+        </div>
+        <div>
+          <kbd>R</kbd><b>Potencia</b>
+          <p>
+            +15 de daño por proyectil durante 6 s. Recarga: 13 s desde la
+            activación.
+          </p>
+        </div>
+        <div>
+          <kbd>F</kbd><b>Nova / ulti</b>
+          <p>
+            Carga al combatir y con el tiempo. Apunta y pulsa F: aviso de 0,65
+            s, 65 de daño en área. Alcance: 280.
+          </p>
+        </div>
       </div>
-    </section>
-  </main>
-  <footer>CLOJURE ARENA · PRUEBA INDIVIDUAL EN CLOJURESCRIPT · MULTIJUGADOR PENDIENTE</footer>
-</div>
-</body>
+      <p class="help-note">
+        El aro indica recarga; la barra de color indica duración activa. Las
+        mejoras caen cada 9 s: armas, vida, escudo o carga. Gana quien llegue a
+        12 bajas o lidere al terminar 3 minutos. Desempate: menos muertes, luego
+        más daño.
+      </p>
+    </dialog>
+    <dialog id="settings-dialog">
+      <div class="dialog-top">
+        <span class="eyebrow">A TU RITMO</span
+        ><button data-close="settings-dialog" class="quiet">CERRAR</button>
+      </div>
+      <h2>AJUSTES</h2>
+      <label class="setting"
+        >Movimiento de cámara<select id="shake-setting">
+          <option value="0">Desactivado</option>
+          <option value="0.45" selected>Suave</option>
+          <option value="1">Intenso</option>
+        </select></label
+      ><label class="setting"
+        >Partículas<select id="particles-setting">
+          <option value="full">Completas</option>
+          <option value="low">Reducidas</option>
+        </select></label
+      ><label class="setting"
+        >Sonido de combate<input id="sound-setting" type="checkbox" checked
+      /></label>
+      <p class="hint">
+        Solo se mueve la arena; los indicadores permanecen fijos. Se respeta la
+        preferencia de movimiento reducido de tu sistema.
+      </p>
+    </dialog>
+    <dialog id="host-dialog">
+      <div class="dialog-top">
+        <span class="eyebrow">TU PC, TU ANFITRIÓN</span
+        ><button data-close="host-dialog" class="quiet">CERRAR</button>
+      </div>
+      <h2>UNA PC. CINCO SALAS.</h2>
+      <div class="host-options">
+        <div>
+          <h3>MISMA WI-FI</h3>
+          <p>En la carpeta del proyecto:</p>
+          <code>bb serve</code>
+          <p>
+            Comparte la dirección de red que imprime, como
+            <b>http://192.168.1.37:8080</b>. Los demás solo necesitan navegador.
+          </p>
+        </div>
+        <div>
+          <h3>DESDE INTERNET</h3>
+          <p>Instala cloudflared y ejecuta:</p>
+          <code>bb internet</code>
+          <p>
+            Comparte el enlace HTTPS temporal. Crea salas con acceso
+            <b>Internet</b>. El enlace funciona mientras tu PC y el túnel estén
+            encendidos.
+          </p>
+        </div>
+      </div>
+      <p class="help-note">
+        El anfitrión ejecuta Clojure y calcula las partidas. El túnel transporta
+        la página y el WebSocket. Elegir “Internet” no abre un túnel
+        automáticamente. Consulta README.md para la instalación.
+      </p>
+    </dialog>
+    <dialog id="qr-dialog">
+      <div class="dialog-top">
+        <span class="eyebrow">ESCANEA Y ENTRA</span
+        ><button data-close="qr-dialog" class="quiet">CERRAR</button>
+      </div>
+      <div id="qr-code"></div>
+      <p id="qr-link" class="hint"></p>
+      <p class="hint">
+        Para jugar necesitas teclado y ratón. El QR abre la invitación.
+      </p>
+    </dialog>
+  </body>
 </html>

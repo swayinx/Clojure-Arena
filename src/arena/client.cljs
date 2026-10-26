@@ -1,1086 +1,437 @@
-(ns arena.client)
-
-;; ============================================================================
-;; 1. CONSTANTES, PALETAS Y REFERENCIAS DOM
-;; ============================================================================
-
-(def canvas (.getElementById js/document "arena"))
-(def ctx (.getContext canvas "2d"))
-(set! (.-imageSmoothingEnabled ctx) false)
-(def motion-query (.matchMedia js/window "(prefers-reduced-motion: reduce)"))
-
-(def fighter-names ["brasa" "chispa" "mora" "bastion"])
-
-(def fighter-palettes
-  {"brasa"   {:primary "#f4774d" :accent "#ffd166" :trail "#ff8a5c"}
-   "chispa"  {:primary "#72e1d2" :accent "#e9f19d" :trail "#72e1d2"}
-   "mora"    {:primary "#ba93ed" :accent "#f1b9ed" :trail "#c8a8f4"}
-   "bastion" {:primary "#f3ce78" :accent "#f6e5ae" :trail "#f3ce78"}})
-
-(def power-colors
-  {:dash   {:main "#a8ffdb" :glow "#72e1d2" :ring "#e0fff4"}
-   :shield {:main "#8edff8" :glow "#4eb9d9" :ring "#c8f4ff"}
-   :heal   {:main "#84ef88" :glow "#4cd137" :ring "#d2ffce"}
-   :boost  {:main "#ff9f43" :glow "#ff6b35" :ring "#fff2a6"}
-   :hurt   {:main "#ff6b6b" :glow "#ff3838" :ring "#ffd6d6"}})
-
-(def sprites
-  (into {}
-        (map (fn [name]
-               (let [image (js/Image.)]
-                 (set! (.-src image) (str "art/" name ".svg"))
-                 [name image]))
-             fighter-names)))
-
-(def arena-bounds {:min-x 45 :max-x 915 :min-y 45 :max-y 555})
-(def walk-speed 280)
-(def dash-speed 900)
-(def dash-duration-ms 180)
-(def dash-cooldown-ms 2500)
-(def shield-max 60)
-(def shield-duration-ms 5000)
-(def shield-cooldown-ms 10000)
-(def heal-amount 35)
-(def heal-duration-ms 750)
-(def heal-cooldown-ms 12000)
-(def boost-duration-ms 6000)
-(def boost-cooldown-ms 13000)
-
-(def max-particles 110)
-(def max-effects 36)
-(def max-texts 20)
-(def max-afterimages 5)
-
-(def keys-down (atom #{}))
-(def mouse (atom {:x 650 :y 300 :down false}))
-(def selected (atom "brasa"))
-(def last-hud (atom 0))
-
-;; ============================================================================
-;; 2. UTILIDADES MATEMÁTICAS Y CONSTRUCTORES DE EFECTOS
-;; ============================================================================
-
-(defn clamp [value lower upper]
-  (max lower (min upper value)))
-
-(defn distance [ax ay bx by]
-  (js/Math.hypot (- ax bx) (- ay by)))
-
-(defn reduced-motion? []
-  (.-matches motion-query))
-
-(defn cap-vec [coll limit]
-  (let [v (vec coll)
-        n (count v)]
-    (if (> n limit)
-      (vec (take-last limit v))
-      v)))
-
-(defn rand-range [low high]
-  (+ low (* (js/Math.random) (- high low))))
-
-(defn ring-effect [x y color max-r duration now kind]
-  {:x x :y y :color color :max-r max-r
-   :born now :until (+ now duration) :duration duration :kind kind})
-
-(defn floating-text [x y text color now]
-  {:x x :y y :vy -44 :text text :color color
-   :born now :until (+ now 750) :duration 750})
-
-(defn make-particle [x y vx vy size color duration now kind]
-  {:x x :y y :vx vx :vy vy :size size :color color
-   :born now :until (+ now duration) :duration duration :kind kind})
-
-(defn spawn-sparks [x y base-angle spread count-num speed color duration now]
-  (let [actual-count (if (reduced-motion?) (max 2 (js/Math.floor (/ count-num 3))) count-num)]
-    (mapv (fn [_]
-            (let [ang (+ base-angle (rand-range (- spread) spread))
-                  spd (* speed (rand-range 0.45 1.15))]
-              (make-particle x y
-                             (* (js/Math.cos ang) spd)
-                             (* (js/Math.sin ang) spd)
-                             (rand-range 2.2 4.5)
-                             color
-                             (* duration (rand-range 0.7 1.15))
-                             now
-                             :spark)))
-          (range actual-count))))
-
-(defn spawn-heal-particles [x y now]
-  (let [cnt (if (reduced-motion?) 3 9)]
-    (mapv (fn [idx]
-            (let [ang (* idx (/ (* 2 js/Math.PI) cnt))
-                  rx (+ x (* (js/Math.cos ang) (rand-range 12 34)))
-                  ry (+ y (* (js/Math.sin ang) (rand-range 8 24)))]
-              (make-particle rx ry
-                             (rand-range -12 12)
-                             (rand-range -75 -38)
-                             (rand-range 3.5 5.5)
-                             (if (even? idx) "#84ef88" "#d2ffce")
-                             680
-                             now
-                             :plus)))
-          (range cnt))))
-
-(defn trigger-shake [state intensity duration now]
-  (if (reduced-motion?)
-    state
-    (let [current-until (get-in state [:shake :until] 0)
-          current-int (get-in state [:shake :intensity] 0)]
-      (if (and (< now current-until) (> current-int intensity))
-        state
-        (assoc state :shake {:intensity intensity :until (+ now duration) :duration duration})))))
-
-;; ============================================================================
-;; 3. ESTADO INICIAL DE PARTIDA, BLANCOS Y JUGADOR
-;; ============================================================================
-
-(defn make-target [id x y now]
-  {:id id :x x :y y :hp 60 :max-hp 60 :alive true
-   :respawn-at 0 :last-shot (+ now (* id 420))
-   :hurt-until 0 :spawn-until 0 :muzzle-until 0 :aim-angle 0})
-
-(defn fresh-player [now]
-  {:x 480 :y 310
-   :hp 100 :max-hp 100
-   :shield 0 :shield-until 0 :shield-hit-until 0
-   :boost-until 0 :heal-until 0
-   :dash-until 0 :dash-dir {:dx 1 :dy 0} :last-afterimage 0
-   :last-move-dir nil
-   :hurt-until 0 :hurt-angle 0
-   :muzzle-until 0
-   :spawn-until (+ now 600)
-   :angle 0 :moving false})
-
-(defn fresh-game
-  ([] (fresh-game 0))
-  ([now]
-   {:running true
-    :player (fresh-player now)
-    :targets [(make-target 0 195 170 now)
-              (make-target 1 765 175 now)
-              (make-target 2 250 465 now)
-              (make-target 3 740 455 now)]
-    :shots []
-    :effects [(ring-effect 480 310 "#a8ffdb" 64 520 now :spawn)]
-    :particles []
-    :texts []
-    :afterimages []
-    :shake {:intensity 0 :until 0 :duration 1}
-    :score 0
-    :last-shot 0
-    :cooldowns {:dash 0 :shield 0 :heal 0 :boost 0}
-    :message "Acércate a los blancos, esquiva con SHIFT y dispara."}))
-
-(def game (atom (assoc (fresh-game 0) :running false)))
-
-;; ============================================================================
-;; 4. LÓGICA DE DIRECCIÓN DE DASH, PODERES Y APLICACIÓN CENTRAL DE DAÑO
-;; ============================================================================
-
-(defn current-wasd-dir [keys-set]
-  (let [dx (+ (if (contains? keys-set "d") 1 0)
-              (if (contains? keys-set "a") -1 0))
-        dy (+ (if (contains? keys-set "s") 1 0)
-              (if (contains? keys-set "w") -1 0))]
-    (when (or (not= dx 0) (not= dy 0))
-      (let [len (js/Math.hypot dx dy)]
-        {:dx (/ dx len) :dy (/ dy len)}))))
-
-(defn resolve-dash-dir [player keys-set]
-  ;; Prioridad: 1) WASD actual -> 2) última dirección de movimiento -> 3) dirección de apuntado
-  (or (current-wasd-dir keys-set)
-      (:last-move-dir player)
-      {:dx (js/Math.cos (:angle player))
-       :dy (js/Math.sin (:angle player))}))
-
-(defn player-dashing? [player now]
-  (< now (:dash-until player 0)))
-
-(defn apply-player-damage
-  "Punto central único donde se evalúa y aplica cualquier daño al jugador.
-   La inmunidad del dash (aprox. 180 ms) tiene prioridad absoluta mientras está activo.
-   Antes y después del dash recibe daño normalmente, evaluando primero el escudo Q."
-  [state raw-damage hit-x hit-y source-angle now]
-  (let [player (:player state)
-        px (:x player)
-        py (:y player)]
-    (if (player-dashing? player now)
-      ;; Inmunidad total durante los cuadros activos del dash: daño = 0
-      (-> state
-          (update :effects #(cap-vec (conj % (ring-effect hit-x hit-y "#a8ffdb" 34 240 now :dodge)) max-effects))
-          (update :particles #(cap-vec (into % (spawn-sparks hit-x hit-y source-angle 1.1 7 210 "#a8ffdb" 240 now)) max-particles))
-          (update :texts #(cap-vec (conj % (floating-text px (- py 44) "INMUNE (0)" "#a8ffdb" now)) max-texts))
-          (assoc :message "¡Golpe esquivado con Dash! Daño recibido: 0."))
-      ;; Fuera del dash: evaluar escudo Q primero, luego vida
-      (let [active-shield (if (< now (:shield-until player)) (:shield player) 0)
-            absorbed (min active-shield raw-damage)
-            new-shield (- active-shield absorbed)
-            hp-damage (- raw-damage absorbed)
-            shield-broke? (and (> active-shield 0) (<= new-shield 0))
-            next-hp (max 0 (- (:hp player) hp-damage))]
-        (cond-> state
-          true
-          (assoc-in [:player :shield] new-shield)
-
-          shield-broke?
-          (-> (assoc-in [:player :shield-until] 0)
-              (update :effects #(cap-vec (conj % (ring-effect px py "#8edff8" 68 380 now :shield-break)) max-effects))
-              (update :particles #(cap-vec (into % (spawn-sparks px py 0 js/Math.PI 14 250 "#8edff8" 360 now)) max-particles))
-              (update :texts #(cap-vec (conj % (floating-text px (- py 52) "¡ESCUDO ROTO!" "#8edff8" now)) max-texts))
-              (assoc :message "¡El escudo absorbió el impacto y se rompió!"))
-
-          (and (> absorbed 0) (not shield-broke?))
-          (-> (assoc-in [:player :shield-hit-until] (+ now 240))
-              (update :effects #(cap-vec (conj % (ring-effect hit-x hit-y "#8edff8" 42 250 now :shield-hit)) max-effects))
-              (update :particles #(cap-vec (into % (spawn-sparks hit-x hit-y source-angle 0.9 7 180 "#8edff8" 240 now)) max-particles))
-              (update :texts #(cap-vec (conj % (floating-text px (- py 46) (str "ESCUDO -" absorbed) "#8edff8" now)) max-texts))
-              (assoc :message (str "Escudo absorbió " absorbed " de daño.")))
-
-          (> hp-damage 0)
-          (-> (assoc-in [:player :hp] next-hp)
-              (assoc-in [:player :hurt-until] (+ now 240))
-              (assoc-in [:player :hurt-angle] source-angle)
-              (update :effects #(cap-vec (conj % (ring-effect hit-x hit-y "#ff6b6b" 38 280 now :hurt)) max-effects))
-              (update :particles #(cap-vec (into % (spawn-sparks hit-x hit-y source-angle 1.0 9 210 "#ff6b6b" 280 now)) max-particles))
-              (update :texts #(cap-vec (conj % (floating-text px (- py 40) (str "-" hp-damage) "#ff7b7b" now)) max-texts))
-              (trigger-shake 5 160 now)
-              (assoc :message (str "Recibiste " hp-damage " puntos de daño."))))))))
-
-(defn activate-power! [power now]
-  (let [s @game
-        ready-at (get-in s [:cooldowns power] 0)]
-    (when (and (:running s) (>= now ready-at))
-      (case power
-        :dash
-        (let [p (:player s)
-              dir (resolve-dash-dir p @keys-down)
-              dash-ang (js/Math.atan2 (:dy dir) (:dx dir))
-              pal (get fighter-palettes @selected {:primary "#a8ffdb"})]
-          (swap! game
-                 (fn [state]
-                   (-> state
-                       (assoc-in [:player :dash-until] (+ now dash-duration-ms))
-                       (assoc-in [:player :dash-dir] dir)
-                       (assoc-in [:player :last-afterimage] now)
-                       (assoc-in [:cooldowns :dash] (+ now dash-cooldown-ms))
-                       (update :afterimages
-                               #(cap-vec (conj % {:x (:x p) :y (:y p) :born now :until (+ now 280)
-                                                  :duration 220 :color (:primary pal) :frame 1})
-                                         max-afterimages))
-                       (update :effects
-                               #(cap-vec (conj % (ring-effect (:x p) (:y p) "#a8ffdb" 48 260 now :dash))
-                                         max-effects))
-                       (update :particles
-                               #(cap-vec (into % (spawn-sparks (:x p) (:y p) (+ dash-ang js/Math.PI) 0.65 10 240 "#a8ffdb" 260 now))
-                                         max-particles))
-                       (assoc :message "Dash evasivo activado: inmune durante 0,18 s.")))))
-
-        :shield
-        (let [p (:player s)]
-          (swap! game
-                 (fn [state]
-                   (-> state
-                       (assoc-in [:player :shield] shield-max)
-                       (assoc-in [:player :shield-until] (+ now shield-duration-ms))
-                       (assoc-in [:player :shield-hit-until] (+ now 180))
-                       (assoc-in [:cooldowns :shield] (+ now shield-cooldown-ms))
-                       (update :effects
-                               #(cap-vec (conj % (ring-effect (:x p) (:y p) "#8edff8" 58 360 now :shield-cast))
-                                         max-effects))
-                       (update :texts
-                               #(cap-vec (conj % (floating-text (:x p) (- (:y p) 44) "ESCUDO +60" "#8edff8" now))
-                                         max-texts))
-                       (assoc :message "Escudo de 60 puntos activo durante 5 segundos.")))))
-
-        :heal
-        (let [p (:player s)
-              cur-hp (:hp p)]
-          (if (< cur-hp 100)
-            (let [healed (- (min 100 (+ cur-hp heal-amount)) cur-hp)]
-              (swap! game
-                     (fn [state]
-                       (-> state
-                           (assoc-in [:player :hp] (+ cur-hp healed))
-                           (assoc-in [:player :heal-until] (+ now heal-duration-ms))
-                           (assoc-in [:cooldowns :heal] (+ now heal-cooldown-ms))
-                           (update :effects
-                                   #(cap-vec (conj % (ring-effect (:x p) (:y p) "#84ef88" 60 440 now :heal))
-                                             max-effects))
-                           (update :particles
-                                   #(cap-vec (into % (spawn-heal-particles (:x p) (:y p) now))
-                                             max-particles))
-                           (update :texts
-                                   #(cap-vec (conj % (floating-text (:x p) (- (:y p) 44) (str "+" healed " VIDA") "#84ef88" now))
-                                             max-texts))
-                           (assoc :message (str "Recuperaste " healed " puntos de vida."))))))
-            (swap! game assoc :message "Tu vida ya está al máximo (100 / 100).")))
-
-        :boost
-        (let [p (:player s)]
-          (swap! game
-                 (fn [state]
-                   (-> state
-                       (assoc-in [:player :boost-until] (+ now boost-duration-ms))
-                       (assoc-in [:cooldowns :boost] (+ now boost-cooldown-ms))
-                       (update :effects
-                               #(cap-vec (conj % (ring-effect (:x p) (:y p) "#ff9f43" 62 400 now :boost))
-                                         max-effects))
-                       (update :particles
-                               #(cap-vec (into % (spawn-sparks (:x p) (:y p) 0 js/Math.PI 12 200 "#ffd166" 340 now))
-                                         max-particles))
-                       (update :texts
-                               #(cap-vec (conj % (floating-text (:x p) (- (:y p) 44) "DAÑO EXTRA" "#ffd166" now))
-                                         max-texts))
-                       (assoc :message "Daño aumentado (35 por disparo) durante 6 segundos.")))))
-        nil))))
-
-;; ============================================================================
-;; 5. ACTUALIZACIÓN DEL ESTADO DE JUEGO (FÍSICA, COLISIONES, CICLO DE VIDA)
-;; ============================================================================
-
-(defn make-shot [x y angle team damage boosted? now]
-  (let [speed (if (= team :player) (if boosted? 780 690) 275)
-        spawn-dist (if (= team :player) 28 24)
-        sx (+ x (* (js/Math.cos angle) spawn-dist))
-        sy (+ y (* (js/Math.sin angle) spawn-dist))]
-    {:x sx :y sy :prev-x x :prev-y y
-     :vx (* (js/Math.cos angle) speed)
-     :vy (* (js/Math.sin angle) speed)
-     :angle angle
-     :team team
-     :damage damage
-     :boosted (boolean boosted?)
-     :born now
-     :life (if (= team :player) 1.15 2.9)}))
-
-(defn update-player-state [state dt now]
-  (let [player (:player state)
-        wasd (current-wasd-dir @keys-down)
-        dashing? (player-dashing? player now)
-        move-dir (if dashing? (:dash-dir player) (or wasd {:dx 0 :dy 0}))
-        speed (if dashing? dash-speed walk-speed)
-        nx (clamp (+ (:x player) (* speed dt (:dx move-dir)))
-                  (:min-x arena-bounds) (:max-x arena-bounds))
-        ny (clamp (+ (:y player) (* speed dt (:dy move-dir)))
-                  (:min-y arena-bounds) (:max-y arena-bounds))
-        aim-angle (js/Math.atan2 (- (:y @mouse) ny) (- (:x @mouse) nx))
-        shield-expired? (and (> (:shield player) 0) (>= now (:shield-until player)))
-        spawn-ghost? (and dashing? (>= (- now (:last-afterimage player 0)) 45))
-        pal (get fighter-palettes @selected {:primary "#a8ffdb"})
-        updated-player (-> player
-                           (assoc :x nx
-                                  :y ny
-                                  :angle aim-angle
-                                  :moving (or dashing? (boolean wasd)))
-                           (cond-> wasd (assoc :last-move-dir wasd))
-                           (cond-> shield-expired? (assoc :shield 0))
-                           (cond-> spawn-ghost? (assoc :last-afterimage now)))]
-    (cond-> (assoc state :player updated-player)
-      shield-expired?
-      (-> (update :effects #(cap-vec (conj % (ring-effect nx ny "#8edff8" 50 300 now :shield-expire)) max-effects))
-          (update :texts #(cap-vec (conj % (floating-text nx (- ny 42) "ESCUDO EXPIRÓ" "#8edff8" now)) max-texts)))
-
-      spawn-ghost?
-      (-> (update :afterimages
-                  #(cap-vec (conj % {:x nx :y ny :born now :until (+ now 240)
-                                     :duration 200 :color (:primary pal) :frame 1})
-                            max-afterimages))
-          (update :particles
-                  #(cap-vec (conj % (make-particle (+ nx (rand-range -10 10))
-                                                   (+ ny (rand-range -12 12))
-                                                   (* (- (:dx move-dir)) 140)
-                                                   (* (- (:dy move-dir)) 140)
-                                                   3.2 "#a8ffdb" 200 now :dash-line))
-                            max-particles))))))
-
-(defn update-targets-and-enemy-fire [state now]
-  (let [player (:player state)]
-    (reduce
-      (fn [acc t]
-        (let [regenerated (if (and (not (:alive t)) (>= now (:respawn-at t)))
-                            (assoc t :alive true :hp 60 :max-hp 60 :last-shot now :spawn-until (+ now 520))
-                            t)
-              just-spawned? (and (not (:alive t)) (:alive regenerated))
-              aim-ang (js/Math.atan2 (- (:y player) (:y regenerated))
-                                     (- (:x player) (:x regenerated)))
-              fire-interval (+ 3200 (* (:id regenerated) 260))
-              should-fire? (and (:alive regenerated)
-                                (> (- now (:last-shot regenerated)) fire-interval))
-              final-t (-> regenerated
-                          (assoc :aim-angle aim-ang)
-                          (cond-> should-fire? (assoc :last-shot now :muzzle-until (+ now 160))))]
-          (cond-> (update acc :targets conj final-t)
-            just-spawned?
-            (update :effects #(cap-vec (conj % (ring-effect (:x final-t) (:y final-t) "#f0ba74" 48 420 now :target-spawn)) max-effects))
-
-            should-fire?
-            (-> (update :shots conj (make-shot (:x final-t) (:y final-t) aim-ang :enemy 6 false now))
-                (update :particles #(cap-vec (into % (spawn-sparks (+ (:x final-t) (* (js/Math.cos aim-ang) 22))
-                                                                   (+ (:y final-t) (* (js/Math.sin aim-ang) 22))
-                                                                   aim-ang 0.45 4 130 "#ff9270" 180 now))
-                                             max-particles))))))
-      (assoc state :targets [])
-      (:targets state))))
-
-(defn advance-shot [acc shot dt now]
-  (let [x (+ (:x shot) (* (:vx shot) dt))
-        y (+ (:y shot) (* (:vy shot) dt))
-        moved (assoc shot :prev-x (:x shot) :prev-y (:y shot) :x x :y y :life (- (:life shot) dt))
-        out-of-bounds? (or (< x 18) (> x 942) (< y 18) (> y 582))]
-    (cond
-      (<= (:life moved) 0)
-      acc
-
-      out-of-bounds?
-      (update acc :particles
-              #(cap-vec (into % (spawn-sparks (clamp x 20 940) (clamp y 20 580)
-                                              (+ (:angle shot) js/Math.PI) 0.8 4 140
-                                              (if (= (:team shot) :player) "#ffe680" "#ff9270")
-                                              180 now))
-                        max-particles))
-
-      (= (:team shot) :player)
-      (if-let [hit (some (fn [t] (when (and (:alive t) (< (distance x y (:x t) (:y t)) 29)) t))
-                         (:targets acc))]
-        (let [id (:id hit)
-              dmg (:damage shot)
-              killed? (<= (:hp hit) dmg)
-              tx (:x hit)
-              ty (:y hit)
-              boosted? (:boosted shot)
-              hit-color (if boosted? "#ff9f43" "#ffe680")]
-          (-> acc
-              (update-in [:targets id]
-                         (fn [t]
-                           (if killed?
-                             (assoc t :hp 0 :alive false :respawn-at (+ now 1800) :hurt-until 0)
-                             (-> t
-                                 (update :hp - dmg)
-                                 (assoc :hurt-until (+ now 150))))))
-              (update :score + (if killed? 1 0))
-              (update :effects
-                      #(cap-vec (cond-> (conj % (ring-effect x y hit-color (if killed? 62 28) (if killed? 420 220) now (if killed? :explosion :hit)))
-                                  killed? (conj (ring-effect tx ty "#fff3a3" 40 300 now :explosion-inner)))
-                                max-effects))
-              (update :particles
-                      #(cap-vec (into % (spawn-sparks x y (+ (:angle shot) js/Math.PI)
-                                                      (if killed? js/Math.PI 0.85)
-                                                      (if killed? 16 7)
-                                                      (if killed? 260 190)
-                                                      (if killed? "#ffd166" hit-color)
-                                                      (if killed? 440 230)
-                                                      now))
-                                max-particles))
-              (update :texts
-                      #(cap-vec (cond-> (conj % (floating-text tx (- ty 36) (str "-" dmg (if boosted? "!" "")) hit-color now))
-                                  killed? (conj (floating-text tx (- ty 54) "DESTRUIDO +1" "#f3df64" now)))
-                                max-texts))
-              (cond-> killed?
-                (-> (trigger-shake 7 210 now)
-                    (assoc :message "Blanco destruido. Se regenerará en 1,8 s.")))))
-        (update acc :shots conj moved))
-
-      :else
-      ;; Disparo enemigo contra el jugador -> pasa por apply-player-damage
-      (let [px (get-in acc [:player :x])
-            py (get-in acc [:player :y])]
-        (if (< (distance x y px py) 21)
-          (apply-player-damage acc (:damage shot) x y (+ (:angle shot) js/Math.PI) now)
-          (update acc :shots conj moved))))))
-
-(defn update-particles-and-cleanup [state dt now]
-  (let [moved-particles (reduce
-                          (fn [acc p]
-                            (if (> (:until p) now)
-                              (let [drag (if (= (:kind p) :plus) 0.98 0.92)]
-                                (conj acc (-> p
-                                              (update :x + (* (:vx p) dt))
-                                              (update :y + (* (:vy p) dt))
-                                              (update :vx * drag)
-                                              (update :vy * drag))))
-                              acc))
-                          []
-                          (:particles state))
-        moved-texts (reduce
-                      (fn [acc txt]
-                        (if (> (:until txt) now)
-                          (conj acc (update txt :y + (* (:vy txt) dt)))
-                          acc))
-                      []
-                      (:texts state))]
-    (-> state
-        (assoc :particles (cap-vec moved-particles max-particles)
-               :texts (cap-vec moved-texts max-texts)
-               :effects (cap-vec (filterv #(> (:until %) now) (:effects state)) max-effects)
-               :afterimages (cap-vec (filterv #(> (:until %) now) (:afterimages state)) max-afterimages)))))
-
-(defn handle-player-respawn [state now]
-  (if (<= (get-in state [:player :hp]) 0)
-    (let [old-p (:player state)
-          dx (:x old-p)
-          dy (:y old-p)
-          new-p (assoc (fresh-player now) :angle (:angle old-p))]
-      (-> state
-          (assoc :player new-p
-                 :shots []
-                 :afterimages []
-                 :message "Te eliminaron. Reapareciste con la vida completa y estado limpio.")
-          (update :effects
-                  #(cap-vec (-> %
-                                (conj (ring-effect dx dy "#ff6b6b" 68 450 now :death-exit))
-                                (conj (ring-effect (:x new-p) (:y new-p) "#a8ffdb" 66 550 now :spawn)))
-                            max-effects))
-          (update :particles
-                  #(cap-vec (-> %
-                                (into (spawn-sparks dx dy 0 js/Math.PI 16 250 "#ff6b6b" 440 now))
-                                (into (spawn-sparks (:x new-p) (:y new-p) 0 js/Math.PI 12 200 "#a8ffdb" 420 now)))
-                            max-particles))
-          (update :texts
-                  #(cap-vec (conj % (floating-text (:x new-p) (- (:y new-p) 48) "REAPARICIÓN" "#a8ffdb" now))
-                            max-texts))
-          (trigger-shake 8 250 now)))
-    state))
-
-(defn advance [s dt now]
-  (let [s1 (update-player-state s dt now)
-        s2 (update-targets-and-enemy-fire s1 now)
-        player (:player s2)
-        firing? (and (:down @mouse) (> (- now (:last-shot s2)) 170))
-        boosted? (< now (:boost-until player))
-        player-shot (when firing?
-                      (make-shot (:x player) (:y player) (:angle player)
-                                 :player (if boosted? 35 20) boosted? now))
-        muz-x (+ (:x player) (* (js/Math.cos (:angle player)) 34))
-        muz-y (+ (:y player) (* (js/Math.sin (:angle player)) 34))
-        s3 (cond-> s2
-             firing?
-             (-> (assoc :last-shot now)
-                 (assoc-in [:player :muzzle-until] (+ now 115))
-                 (update :shots conj player-shot)
-                 (update :particles
-                         #(cap-vec (into % (spawn-sparks muz-x muz-y (:angle player) 0.42
-                                                         (if boosted? 7 4) 190
-                                                         (if boosted? "#ffd166" "#fff3a3")
-                                                         140 now))
-                                   max-particles))
-                 (cond-> boosted? (trigger-shake 2.2 65 now))))
-        existing-shots (:shots s3)
-        s4 (reduce (fn [acc shot] (advance-shot acc shot dt now))
-                   (assoc s3 :shots [])
-                   existing-shots)
-        s5 (update-particles-and-cleanup s4 dt now)]
-    (handle-player-respawn s5 now)))
-
-;; ============================================================================
-;; 6. FUNCIONES DE DIBUJO EN CANVAS (SEPARADAS DEL ESTADO)
-;; ============================================================================
-
-(defn rect! [x y w h color]
-  (set! (.-fillStyle ctx) color)
-  (.fillRect ctx x y w h))
-
-(defn circle! [x y radius color]
-  (set! (.-fillStyle ctx) color)
-  (.beginPath ctx)
-  (.arc ctx x y (max 0 radius) 0 (* 2 js/Math.PI))
-  (.fill ctx))
-
-(defn stroke-circle! [x y radius color width]
-  (set! (.-strokeStyle ctx) color)
-  (set! (.-lineWidth ctx) width)
-  (.beginPath ctx)
-  (.arc ctx x y (max 0 radius) 0 (* 2 js/Math.PI))
-  (.stroke ctx))
-
-(defn line! [x1 y1 x2 y2 color width]
-  (set! (.-strokeStyle ctx) color)
-  (set! (.-lineWidth ctx) width)
-  (.beginPath ctx)
-  (.moveTo ctx x1 y1)
-  (.lineTo ctx x2 y2)
-  (.stroke ctx))
-
-(defn draw-floor! [now]
-  (rect! 0 0 960 600 "#2e4134")
-  ;; Viñeta interior sutil de la arena
-  (rect! 22 22 916 556 "#34483a")
-  ;; Cuadrícula táctica
-  (doseq [x (range 48 960 48)] (line! x 22 x 578 "#70866b28" 1))
-  (doseq [y (range 48 600 48)] (line! 22 y 938 y "#70866b28" 1))
-  ;; Líneas divisorias centrales y círculo táctico
-  (line! 480 22 480 578 "#8fa68622" 1)
-  (line! 22 300 938 300 "#8fa68622" 1)
-  (circle! 480 300 112 "#ffffff07")
-  (stroke-circle! 480 300 112 "#b1c09530" 2)
-  (stroke-circle! 480 300 36 "#b1c09522" 1.5)
-  ;; Marco perimetral de límites
-  (set! (.-strokeStyle ctx) "#aabd8266")
-  (set! (.-lineWidth ctx) 3)
-  (.strokeRect ctx 22 22 916 556)
-  ;; Esquinas tácticas
-  (doseq [[cx cy sx sy] [[30 30 1 1] [930 30 -1 1] [30 570 1 -1] [930 570 -1 -1]]]
-    (line! cx cy (+ cx (* sx 22)) cy "#f3df6488" 3)
-    (line! cx cy cx (+ cy (* sy 22)) "#f3df6488" 3)))
-
-(defn draw-target! [t now]
-  (let [x (:x t)
-        y (:y t)]
-    ;; Base en el suelo del blanco
-    (circle! x y 32 "#18241c88")
-    (stroke-circle! x y 32 "#687d6644" 1.5)
-    (if (:alive t)
-      (let [pulse (if (reduced-motion?) 1 (+ 1 (* 0.045 (js/Math.sin (/ now 210)))))
-            hurt? (< now (:hurt-until t 0))
-            spawning? (< now (:spawn-until t 0))
-            fire-cd (- (+ 3200 (* (:id t) 260)) (- now (:last-shot t)))
-            charging? (and (< fire-cd 420) (> fire-cd 0))
-            ang (:aim-angle t 0)
-            bx (+ x (* (js/Math.cos ang) 22))
-            by (+ y (* (js/Math.sin ang) 22))]
-        ;; Efecto de aparición al regenerarse
-        (when spawning?
-          (let [p (/ (- (:spawn-until t) now) 520)]
-            (stroke-circle! x y (* 44 (- 1 p)) "#f0ba74aa" 3)))
-        ;; Aviso de carga antes de disparar
-        (when charging?
-          (stroke-circle! x y 33 "#ff927088" 2))
-        ;; Sombra y cuerpo del blanco
-        (circle! x (+ y 22) 27 "#0e1711a8")
-        (circle! x y (* 28 pulse) (if hurt? "#fff3a3" "#1b2620"))
-        (circle! x y (* 22 pulse) (if hurt? "#ffffff" "#8d9e82"))
-        (circle! x y (* 15 pulse) (if hurt? "#ff9f43" "#293d30"))
-        ;; Cañón orientado hacia el jugador
-        (line! x y bx by (if charging? "#ff9270" "#536751") 6)
-        (circle! x y 8 (if (or hurt? charging?) "#ff6b6b" "#e2a66f"))
-        (line! (- x 9) y (+ x 9) y "#f1d8aa" 2)
-        (line! x (- y 9) x (+ y 9) "#f1d8aa" 2)
-        ;; Fogonazo enemigo al disparar
-        (when (< now (:muzzle-until t 0))
-          (circle! bx by 9 "#ff9270")
-          (circle! bx by 4 "#ffffff"))
-        ;; Barra de vida del blanco
-        (rect! (- x 31) (- y 40) 62 7 "#111c14")
-        (rect! (- x 30) (- y 39) (max 0 (:hp t)) 5 (if hurt? "#ffffff" "#f0ba74"))
-        (set! (.-font ctx) "bold 11px Mono")
-        (set! (.-textAlign ctx) "center")
-        (set! (.-fillStyle ctx) "#e9edda")
-        (.fillText ctx (str "BLANCO · " (:hp t)) x (+ y 49)))
-      ;; Blanco destruido: indicador de regeneración
-      (let [rem-ms (max 0 (- (:respawn-at t) now))
-            progress (- 1 (/ rem-ms 1800))]
-        (set! (.-strokeStyle ctx) "#f3df6488")
-        (set! (.-lineWidth ctx) 3)
-        (.beginPath ctx)
-        (.arc ctx x y 22 (- (/ js/Math.PI 2)) (+ (- (/ js/Math.PI 2)) (* progress 2 js/Math.PI)))
-        (.stroke ctx)
-        (set! (.-font ctx) "bold 10px Mono")
-        (set! (.-textAlign ctx) "center")
-        (set! (.-fillStyle ctx) "#b5c3b1")
-        (.fillText ctx "REGENERANDO" x (+ y 40))))))
-
-(defn draw-afterimages! [afterimages now]
-  (let [image (get sprites @selected)]
-    (doseq [ghost afterimages]
-      (let [alpha (* 0.48 (clamp (/ (- (:until ghost) now) (:duration ghost)) 0 1))
-            gx (:x ghost)
-            gy (:y ghost)]
-        (.save ctx)
-        (set! (.-globalAlpha ctx) alpha)
-        (stroke-circle! gx gy 28 (:color ghost) 2)
-        (when (and image (.-complete image) (> (.-naturalWidth image) 0))
-          (.drawImage ctx image (* (:frame ghost 5) 32) 0 32 32 (- gx 46) (- gy 56) 92 92))
-        (.restore ctx)))))
-
-(defn draw-shots! [shots]
-  (doseq [shot shots]
-    (let [x (:x shot)
-          y (:y shot)
-          ang (:angle shot 0)
-          player? (= (:team shot) :player)
-          boosted? (:boosted shot)
-          tail-len (if player? (if boosted? 34 22) 18)
-          tx (- x (* (js/Math.cos ang) tail-len))
-          ty (- y (* (js/Math.sin ang) tail-len))]
-      (if player?
-        (if boosted?
-          (do
-            (line! tx ty x y "#ff6b3588" 10)
-            (line! tx ty x y "#ff9f43" 5)
-            (circle! x y 9 "#ff9f43")
-            (circle! x y 5 "#ffffff"))
-          (do
-            (line! tx ty x y "#f5b84177" 6)
-            (line! tx ty x y "#ffe680" 3)
-            (circle! x y 6.5 "#ffe680")
-            (circle! x y 3.2 "#ffffff")))
-        ;; Proyectil enemigo con rastro y halo contrastado
-        (do
-          (line! tx ty x y "#ff383866" 7)
-          (line! tx ty x y "#ff9270" 3.5)
-          (circle! x y 6.5 "#ff5e57")
-          (circle! x y 3.2 "#fff2a6"))))))
-
-(defn draw-effects-and-particles! [s now]
-  ;; Anillos de impacto, explosión, curación y poderes
-  (doseq [fx (:effects s)]
-    (let [progress (clamp (- 1 (/ (- (:until fx) now) (:duration fx))) 0 1)
-          alpha (clamp (- 1 progress) 0 1)
-          radius (* (:max-r fx) (+ 0.2 (* 0.8 progress)))]
-      (.save ctx)
-      (set! (.-globalAlpha ctx) alpha)
-      (when (contains? #{:explosion :shield-break :death-exit} (:kind fx))
-        (circle! (:x fx) (:y fx) (* radius 0.65) (:color fx)))
-      (stroke-circle! (:x fx) (:y fx) radius (:color fx)
-                      (if (= (:kind fx) :explosion) 4.5 3))
-      (.restore ctx)))
-
-  ;; Partículas de chispas, estela de velocidad y cruces de curación
-  (doseq [p (:particles s)]
-    (let [alpha (clamp (/ (- (:until p) now) (:duration p)) 0 1)
-          px (:x p)
-          py (:y p)
-          sz (:size p)]
-      (.save ctx)
-      (set! (.-globalAlpha ctx) alpha)
-      (case (:kind p)
-        :plus
-        (do
-          (rect! (- px 1.5) (- py 5) 3 10 (:color p))
-          (rect! (- px 5) (- py 1.5) 10 3 (:color p)))
-        :dash-line
-        (line! px py (- px (* (:vx p) 0.08)) (- py (* (:vy p) 0.08)) (:color p) 2.5)
-        ;; :spark por defecto
-        (do
-          (line! px py (- px (* (:vx p) 0.045)) (- py (* (:vy p) 0.045)) (:color p) sz)
-          (circle! px py (* sz 0.55) "#ffffff")))
-      (.restore ctx))))
-
-(defn select-sprite-frame [player s now]
-  (cond
-    (< now (:hurt-until player 0)) 6
-    (player-dashing? player now) 5
-    (< (- now (:last-shot s 0)) 115) 4
-    (:moving player) (nth [0 1 2 3] (mod (js/Math.floor (/ now 95)) 4))
-    (< now (:boost-until player 0)) 7
-    :else 0))
-
-(defn draw-player! [s now]
-  (let [player (:player s)
-        x (:x player)
-        y (:y player)
-        ang (:angle player)
-        image (get sprites @selected)
-        frame (select-sprite-frame player s now)
-        boosted? (< now (:boost-until player 0))
-        dashing? (player-dashing? player now)
-        shielded? (and (> (:shield player) 0) (< now (:shield-until player 0)))
-        shield-hit? (< now (:shield-hit-until player 0))
-        healing? (< now (:heal-until player 0))
-        hurt? (< now (:hurt-until player 0))
-        spawning? (< now (:spawn-until player 0))
-        stride (if (:moving player) (js/Math.sin (/ now 72)) 0)
-        bob (cond dashing? -4
-                  (:moving player) (* -3 (js/Math.abs stride))
-                  :else (* 1.2 (js/Math.sin (/ now 330))))
-        stretch-x (if dashing? 1.22 1)
-        stretch-y (if dashing? 0.82 (+ 1 (* 0.025 (js/Math.sin (/ now 300)))))
-        recoil (if (< now (:muzzle-until player 0)) 4 0)]
-    ;; Sombra en el suelo
-    (circle! x (+ y 26) 33 "#0e1711a8")
-
-    ;; Haz de entrada al aparecer o reaparecer
-    (when spawning?
-      (let [p (/ (- (:spawn-until player) now) 600)]
-        (.save ctx)
-        (set! (.-globalAlpha ctx) (clamp p 0 1))
-        (rect! (- x 26) 22 52 (- y 10) "#a8ffdb33")
-        (stroke-circle! x y (* 52 p) "#a8ffdb" 3)
-        (.restore ctx)))
-
-    ;; Aura de Daño Extra (R)
-    (when boosted?
-      (let [rot (if (reduced-motion?) 0 (/ now 280))]
-        (circle! x y 36 "#ff9f4328")
-        (stroke-circle! x y 36 "#ff9f43" 3)
-        (doseq [i (range 4)]
-          (let [a (+ rot (* i (/ js/Math.PI 2)))
-                cx (+ x (* (js/Math.cos a) 41))
-                cy (+ y (* (js/Math.sin a) 41))]
-            (circle! cx cy 3.5 "#ffd166")))))
-
-    ;; Aura de Curación (E)
-    (when healing?
-      (circle! x y 48 "#84ef8830")
-      (stroke-circle! x y 46 "#84ef88" 3))
-
-    ;; Aura de Inmunidad de Dash (Shift)
-    (when dashing?
-      (let [ddir (:dash-dir player {:dx 1 :dy 0})]
-        (circle! x y 42 "#a8ffdb38")
-        (stroke-circle! x y 42 "#e0fff4" 3.5)
-        (line! (- x (* (:dx ddir) 38)) (- y (* (:dy ddir) 38))
-               (- x (* (:dx ddir) 14)) (- y (* (:dy ddir) 14))
-               "#a8ffdb" 4)))
-
-    ;; Contorno animado y destello del Escudo (Q)
-    (when shielded?
-      (let [rot (if (reduced-motion?) 0 (/ now 420))]
-        (circle! x y 46 (if shield-hit? "#ffffff55" "#72caee24"))
-        (stroke-circle! x y 46 (if shield-hit? "#ffffff" "#8edff8") (if shield-hit? 5 2.5))
-        (.save ctx)
-        (set! (.-strokeStyle ctx) (if shield-hit? "#ffffff" "#c8f4ff"))
-        (set! (.-lineWidth ctx) 3.5)
-        (doseq [i (range 3)]
-          (let [start (+ rot (* i (/ (* 2 js/Math.PI) 3)))]
-            (.beginPath ctx)
-            (.arc ctx x y 49 start (+ start 1.15))
-            (.stroke ctx)))
-        (.restore ctx)))
-
-    ;; Indicador direccional de daño recibido
-    (when hurt?
-      (let [hang (:hurt-angle player 0)]
-        (circle! x y 38 "#ff383838")
-        (.save ctx)
-        (set! (.-strokeStyle ctx) "#ff6b6b")
-        (set! (.-lineWidth ctx) 5)
-        (.beginPath ctx)
-        (.arc ctx x y 44 (- hang 0.7) (+ hang 0.7))
-        (.stroke ctx)
-        (.restore ctx)))
-
-    ;; Línea de puntería sutil y cañón del arma
-    (let [tip-x (+ x (* (js/Math.cos ang) 39))
-          tip-y (+ y (* (js/Math.sin ang) 39))
-          sight-x (+ x (* (js/Math.cos ang) 95))
-          sight-y (+ y (* (js/Math.sin ang) 95))]
-      (line! tip-x tip-y sight-x sight-y (if boosted? "#ff9f4344" "#e8ecdc26") 1.5)
-      (line! x y tip-x tip-y (if boosted? "#ffd166" "#d4ded1") (if boosted? 8 6.5))
-      ;; Fogonazo de arma (Muzzle Flash)
-      (when (< now (:muzzle-until player 0))
-        (let [fl-r (if boosted? 15 11)
-              perp (+ ang (/ js/Math.PI 2))]
-          (circle! tip-x tip-y fl-r (if boosted? "#ff9f43" "#ffe680"))
-          (circle! tip-x tip-y (* fl-r 0.55) "#ffffff")
-          (line! (- tip-x (* (js/Math.cos perp) fl-r))
-                 (- tip-y (* (js/Math.sin perp) fl-r))
-                 (+ tip-x (* (js/Math.cos perp) fl-r))
-                 (+ tip-y (* (js/Math.sin perp) fl-r))
-                 "#ffffff" 2.5))))
-
-    ;; Sprite del personaje seleccionado (8 cuadros en SVG)
-    (when (and image (.-complete image) (> (.-naturalWidth image) 0))
-      (.save ctx)
-      (.translate ctx (- x (* recoil (js/Math.cos ang)))
-                     (- (+ y bob) (* recoil (js/Math.sin ang))))
-      (.rotate ctx (if dashing? (* 0.07 (get-in player [:dash-dir :dx] 0))
-                       (* 0.025 stride)))
-      (.scale ctx stretch-x stretch-y)
-      (.drawImage ctx image (* frame 32) 0 32 32 -46 -56 92 92)
-      (.restore ctx))
-
-    ;; Micro-barra de recarga de Dash bajo el jugador cuando está en enfriamiento
-    (let [dash-ready (get-in s [:cooldowns :dash] 0)]
-      (when (> dash-ready now)
-        (let [pct (clamp (- 1 (/ (- dash-ready now) dash-cooldown-ms)) 0 1)]
-          (rect! (- x 22) (+ y 36) 44 4 "#111c14")
-          (rect! (- x 21) (+ y 37) (* 42 pct) 2 "#a8ffdb"))))
-
-    (set! (.-font ctx) "bold 12px Mono")
-    (set! (.-textAlign ctx) "center")
-    (set! (.-fillStyle ctx) (if dashing? "#a8ffdb" (if boosted? "#ffd166" "#f7f5df")))
-    (.fillText ctx (if dashing? "DASH" "TÚ") x (+ y 54))))
-
-(defn draw-floating-texts! [texts now]
-  (doseq [txt texts]
-    (let [alpha (clamp (/ (- (:until txt) now) (:duration txt)) 0 1)]
-      (.save ctx)
-      (set! (.-globalAlpha ctx) alpha)
-      (set! (.-font ctx) "bold 12px Mono")
-      (set! (.-textAlign ctx) "center")
-      (set! (.-fillStyle ctx) "#0d1510")
-      (.fillText ctx (:text txt) (+ (:x txt) 1) (+ (:y txt) 1))
-      (set! (.-fillStyle ctx) (:color txt))
-      (.fillText ctx (:text txt) (:x txt) (:y txt))
-      (.restore ctx))))
-
-(defn draw-crosshair! [s now]
-  (let [x (:x @mouse)
-        y (:y @mouse)
-        boosted? (< now (get-in s [:player :boost-until] 0))
-        firing? (< (- now (:last-shot s 0)) 120)
-        gap (if firing? 6 3)
-        outer (if firing? 13 10)
-        col (if boosted? "#ffd166" "#f4e79c")]
-    (when boosted?
-      (stroke-circle! x y 9 "#ff9f4388" 1.5))
-    (line! (- x outer) y (- x gap) y col 2)
-    (line! (+ x gap) y (+ x outer) y col 2)
-    (line! x (- y outer) x (- y gap) col 2)
-    (line! x (+ y gap) x (+ y outer) col 2)))
-
-(defn draw! [s now]
-  (let [shake (:shake s)
-        shaking? (and (not (reduced-motion?)) (< now (:until shake 0)))
-        rem-ratio (if shaking? (clamp (/ (- (:until shake) now) (:duration shake 1)) 0 1) 0)
-        mag (* (:intensity shake 0) rem-ratio)
-        sx (if shaking? (* (js/Math.sin (* now 0.09)) mag) 0)
-        sy (if shaking? (* (js/Math.cos (* now 0.11)) mag) 0)]
-    (.save ctx)
-    (.translate ctx sx sy)
-    (draw-floor! now)
-    (doseq [t (:targets s)] (draw-target! t now))
-    (draw-afterimages! (:afterimages s) now)
-    (draw-shots! (:shots s))
-    (draw-effects-and-particles! s now)
-    (draw-player! s now)
-    (draw-floating-texts! (:texts s) now)
-    (draw-crosshair! s now)
-    (.restore ctx)))
-
-;; ============================================================================
-;; 7. ACTUALIZACIÓN DEL HUD Y EVENTOS DE INTERFAZ / TECLADO / RATÓN
-;; ============================================================================
-
-(defn set-text! [id value]
-  (when-let [el (.getElementById js/document id)]
-    (set! (.-textContent el) value)))
-
-(defn format-cooldown [ready-at now active-until precise?]
-  (cond
-    (> active-until now) "ACTIVO"
-    (> ready-at now)
-    (let [secs (/ (- ready-at now) 1000)]
-      (if precise?
-        (str (.toFixed secs 1) " s")
-        (str (js/Math.ceil secs) " s")))
-    :else "LISTO"))
-
-(defn update-hud! [s now]
-  (let [p (:player s)
-        cds (:cooldowns s)]
-    (set-text! "health-text" (str (:hp p) " / 100"))
-    (set! (.. js/document (getElementById "health-bar") -style -width) (str (:hp p) "%"))
-    (set-text! "shield-text" (str (:shield p) " / 60"))
-    (set! (.. js/document (getElementById "shield-bar") -style -width) (str (* (/ (:shield p) 60) 100) "%"))
-    (set-text! "score" (:score s))
-    (set-text! "game-message" (:message s))
-    (doseq [[power suffix active precise?]
-            [[:dash   "dash"   (:dash-until p) true]
-             [:shield "shield" (if (> (:shield p) 0) (:shield-until p) 0) false]
-             [:heal   "heal"   (:heal-until p) false]
-             [:boost  "boost"  (:boost-until p) false]]]
-      (when-let [row (.getElementById js/document (str "power-" suffix))]
-        (let [label (format-cooldown (get cds power 0) now active precise?)]
-          (set-text! (str suffix "-cooldown") label)
-          (.toggle (.-classList row) "active" (= label "ACTIVO"))
-          (.toggle (.-classList row) "cooling" (and (not= label "ACTIVO") (not= label "LISTO"))))))))
-
-(defn show-screen! [id]
-  (.forEach (.querySelectorAll js/document ".screen")
-            (fn [screen] (.toggle (.-classList screen) "active" (= (.-id screen) id))))
-  (.scrollTo js/window 0 0))
-
-(defn start! []
-  (let [now (js/performance.now)]
-    (reset! game (fresh-game now))
-    (reset! keys-down #{})
-    (reset! mouse {:x 650 :y 300 :down false})
-    (set-text! "hud-name" (.toUpperCase @selected))
-    (show-screen! "juego")
-    (draw! @game now)
-    (update-hud! @game now)
-    (reset! last-hud now)
-    (.focus canvas)))
-
+(ns arena.client
+  "Entrada del navegador, HUD, predicción local y transporte WebSocket/EDN."
+  (:require [arena.engine :as e] [arena.view :as view]
+            [cljs.reader :as reader] [clojure.string :as str]))
+
+(def by-id (memoize #(.getElementById js/document %)))
+(defn text! [id value] (when-let [el (by-id id)] (when (not= (.-textContent el) (str value)) (set! (.-textContent el) (str value)))))
+(defn hidden! [id hide?] (set! (.-hidden (by-id id)) (boolean hide?)))
+(defn disable! [id v] (set! (.-disabled (by-id id)) (boolean v)))
+(defn on! [id event f] (.addEventListener (by-id id) event f))
+(defn css! [el prop value] (.setProperty (.-style el) prop (str value)))
+(defn node [tag class text]
+  (let [el (.createElement js/document tag)] (set! (.-className el) class) (set! (.-textContent el) text) el))
+(defn clear! [el] (.replaceChildren el))
+(defn perf [] (js/performance.now))
+(defonce client (atom {:mode :none :screen "inicio" :skin "brasa" :you "you" :online false :rtt 0
+                       :world nil :previous nil :received-at 0 :pending [] :seq 0 :rooms [] :info {}}))
+(defonce socket (atom nil))
+(defonce keys-down (atom #{}))
+(defonce mouse (atom {:x 650 :y 300 :down false}))
+(defonce actions (atom []))
+(defonce toast-timer (atom nil))
+(defonce announce-timer (atom nil))
+(defonce last-frame (atom 0))
+(defonce accumulator (atom 0))
+(defonce last-hud (atom 0))
+(defonce room-render-key (atom nil))
+(defonce score-render-key (atom nil))
+(defonce announced-event (atom 0))
+(defonce pending-invite (atom (some-> (js/URLSearchParams. (.-search js/location)) (.get "room") str/upper-case)))
+(defn save-preferences! []
+  (try (.setItem js/localStorage "clojure-arena/preferences"
+                 (pr-str {:skin (:skin @client) :name (.-value (by-id "player-name")) :settings @view/settings}))
+       (catch :default _ nil)))
+(defn toast! [message]
+  (text! "toast" message) (hidden! "toast" false)
+  (when @toast-timer (js/clearTimeout @toast-timer))
+  (reset! toast-timer (js/setTimeout #(hidden! "toast" true) 3800)))
+(defn announce! [message]
+  (text! "announcer" message) (.add (.-classList (by-id "announcer")) "show")
+  (when @announce-timer (js/clearTimeout @announce-timer))
+  (reset! announce-timer (js/setTimeout #(.remove (.-classList (by-id "announcer")) "show") 2000)))
+(defn clear-input! [] (reset! keys-down #{}) (reset! actions []) (swap! mouse assoc :down false))
+(defn screen! [id]
+  (clear-input!) (swap! client assoc :screen id)
+  (doseq [el (array-seq (.querySelectorAll js/document ".screen"))]
+    (.toggle (.-classList el) "active" (= (.-id el) id)))
+  (when (= id "juego") (.focus view/canvas)))
+(defn send! [message]
+  (when (and @socket (= (.-readyState @socket) js/WebSocket.OPEN)) (.send @socket (pr-str message))))
+(defn identity-message [] {:name (let [n (str/trim (.-value (by-id "player-name")))] (if (str/blank? n) "Jugador" n)) :skin (:skin @client)})
+(defn join! [code] (save-preferences!) (send! (merge (identity-message) {:type :join :code code})))
+(defn controls []
+  {:dx (+ (if (contains? @keys-down "d") 1 0) (if (contains? @keys-down "a") -1 0))
+   :dy (+ (if (contains? @keys-down "s") 1 0) (if (contains? @keys-down "w") -1 0))
+   :ax (:x @mouse) :ay (:y @mouse) :fire (:down @mouse) :actions @actions})
+(defn server-time []
+  (let [s @client] (+ (get-in s [:world :time] 0) (min 180 (- (perf) (:received-at s))) (* 0.5 (:rtt s)))))
+
+(def ability-descriptions
+  {:dash ["Inmune 0,18 s" "DASH EVASIVO"] :shield ["60 puntos · 5 s" "ESCUDO"]
+   :heal ["+35 de vida" "CURACIÓN"] :boost ["+15 daño · 6 s" "POTENCIA"] :ult ["Área · 65 daño" "NOVA / ULTI"]})
+(defn build-abilities! []
+  (doseq [power [:dash :shield :heal :boost :ult]]
+    (let [a (get e/abilities power) b (node "button" (str "ability " (when (= power :ult) "ult")) "")
+          suffix (name power) [description title] (get ability-descriptions power)]
+      (set! (.-id b) (str "power-" suffix)) (.setAttribute b "data-power" suffix)
+      (.setAttribute b "aria-label" (str (:name a) ", tecla " (:key a) ". " description))
+      (set! (.-title b) (str title " · " description)) (css! b "--ability" (:color a))
+      (set! (.-innerHTML b)
+            (str "<span class='ability-ring'><kbd>" (:key a) "</kbd></span>"
+                 "<span class='ability-copy'><b>" (:name a) "</b><strong id='" suffix "-cooldown'>LISTO</strong><small>" description "</small></span>"
+                 "<span class='ability-duration'><span id='" suffix "-active'>DISPONIBLE</span><span class='active-track'><i id='" suffix "-bar'></i></span></span>"))
+      (.addEventListener b "click" #(do (swap! actions conj power) (view/resume-audio!) (.focus view/canvas)))
+      (.appendChild (by-id "abilities") b))))
+
+(defn render-rooms! [rooms]
+  (let [container (by-id "room-list")]
+    (clear! container)
+    (if (empty? rooms)
+      (.appendChild container (node "div" "empty-rooms" "Tu próxima partida empieza aquí.\nCrea una sala e invita a tus amigos."))
+      (doseq [room rooms]
+        (let [b (node "button" "room-entry" "") copy (node "span" "" "")
+              full? (>= (:count room) 4) playing? (= (:phase room) :playing)]
+          (.appendChild copy (node "b" "" (:name room)))
+          (.appendChild copy (node "small" "" (str (:code room) " · " (if (= :lan (:visibility room)) "WI-FI" "INTERNET") (when playing? " · EN JUEGO"))))
+          (.appendChild b copy) (.appendChild b (node "span" "" (str (:count room) "/4")))
+          (set! (.-disabled b) (or full? playing?))
+          (.addEventListener b "click" #(join! (:code room))) (.appendChild container b))))))
+
+(defn invite-url []
+  (let [{:keys [info visibility code]} @client
+        local-origin (.-origin js/location)
+        origin (if (= :internet visibility)
+                 (or (:public-url info) local-origin)
+                 (if (contains? #{"localhost" "127.0.0.1"} (.-hostname js/location))
+                   (or (first (:lan-urls info)) local-origin) local-origin))]
+    (str origin "/?room=" code)))
+(defn refresh-invite! []
+  (when (:code @client)
+    (let [url (invite-url) online-room? (= :internet (:visibility @client))
+          public? (or (:public-url (:info @client)) (= "https:" (.-protocol js/location)))]
+      (set! (.-value (by-id "invite-url")) url)
+      (text! "invite-hint" (if (and online-room? (not public?))
+                             "Falta el túnel: ejecuta bb internet para obtener un enlace público."
+                             (if online-room? "Acceso por Internet mientras el anfitrión esté encendido." "Solo equipos conectados a la misma red Wi-Fi."))))))
+(defn refresh-lobby! []
+  (let [{:keys [world host you code visibility name]} @client
+        signature [(:players world) host code visibility]]
+    (when (not= signature @room-render-key)
+      (reset! room-render-key signature)
+      (text! "lobby-title" (str/upper-case (or name "ARENA")))
+      (text! "room-mode" (if (= :internet visibility) "SALA DE INTERNET" "MISMA WI-FI"))
+      (text! "lobby-code" code)
+      (clear! (by-id "lobby-players"))
+      (doseq [slot (range 4)]
+        (let [p (first (filter #(= slot (:slot %)) (vals (:players world))))
+              card (node "div" (str "lobby-player" (when-not p " empty")) "")]
+          (.appendChild card (node "span" "seat-number" (str "0" (inc slot))))
+          (if p
+            (do (.appendChild card (node "span" (str "sprite " (:skin p)) ""))
+                (.appendChild card (node "h3" "" (:name p)))
+                (.appendChild card (node "p" "" (str (when (= you (:id p)) "TÚ · ") (if (= host (:id p)) "CREADOR" "CONECTADO")))))
+            (do (.appendChild card (node "span" "empty-seat" "+"))
+                (.appendChild card (node "p" "" "ESPERANDO JUGADOR"))))
+          (.appendChild (by-id "lobby-players") card)))
+      (let [count (count (:players world)) mine? (= you host)]
+        (disable! "start-round" (or (not mine?) (< count 2)))
+        (text! "lobby-status" (if mine? (str count "/4 conectados. " (if (< count 2) "Invita a alguien para empezar." "Puedes iniciar la ronda.")) "El creador iniciará la partida."))
+        (text! "start-round" (if mine? "INICIAR PARTIDA" "ESPERANDO AL CREADOR")))
+      (refresh-invite!))))
+
+(defn seconds [ms] (str (.toFixed (max 0 (/ ms 1000)) 1) " s"))
+(defn match-clock [ms]
+  (let [s (max 0 (js/Math.ceil (/ ms 1000)))] (str (js/Math.floor (/ s 60)) ":" (.padStart (str (mod s 60)) 2 "0"))))
+(defn refresh-score! [world]
+  (let [signature [(:phase world) (mapv #(select-keys % [:id :name :kills :deaths :damage]) (e/ranking world))]]
+    (when (not= signature @score-render-key)
+      (reset! score-render-key signature) (clear! (by-id "score-rows"))
+      (doseq [p (e/ranking world)]
+        (let [row (node "div" (str "score-row" (when (= (:you @client) (:id p)) " me")) "")]
+          (.appendChild row (node "b" "" (:name p)))
+          (doseq [v [(:kills p) (:deaths p) (:damage p)]] (.appendChild row (node "span" "" (str v))))
+          (.appendChild (by-id "score-rows") row)))
+      (hidden! "round-actions" (not= :finished (:phase world)))
+      (text! "scoreboard-title" (if (= :finished (:phase world)) "RONDA TERMINADA" "MARCADOR"))
+      (when (= :finished (:phase world))
+        (let [winner (get-in world [:players (:winner world)])]
+          (text! "winner-text" (if winner (str (:name winner) " gana la ronda") "Empate en la arena"))
+          (disable! "rematch" (not= (:host @client) (:you @client))))))))
+
+(defn update-hud! [world now]
+  (when-let [p (get-in world [:players (:you @client)])]
+    (let [training? (= :training (:mode @client))]
+      (text! "hud-name" (str/upper-case (:skin p))) (text! "score" (str (:kills p) " BAJAS"))
+      (text! "health-text" (str (:hp p) " / 100")) (css! (by-id "health-bar") "width" (str (:hp p) "%"))
+      (text! "shield-text" (str (:shield p) " / 60")) (css! (by-id "shield-bar") "width" (str (* (/ (:shield p) 60) 100) "%"))
+      (text! "weapon-label" (str (get-in e/weapons [(:weapon p) :name])
+                                     (if (= :pulse (:weapon p)) " · CLIC PARA DISPARAR" (str " · " (seconds (- (:weapon-until p) now))))))
+      (text! "match-time" (if training? "LIBRE" (match-clock (- (:round-end world) now))))
+      (text! "match-mode" (if training? "ENTRENAMIENTO" (str "SALA " (:code @client))))
+      (text! "match-goal" (if training? "PRUEBA TUS HABILIDADES" "12 BAJAS / 3 MIN"))
+      (text! "net-stats" (if training? "LOCAL" (str (js/Math.round (:rtt @client)) " ms")))
+      (hidden! "restart-game" (not training?))
+      (hidden! "death-overlay" (:alive p))
+      (when-not (:alive p) (text! "respawn-time" (.toFixed (max 0 (/ (- (:respawn-at p) now) 1000)) 1)))
+      (doseq [power [:dash :shield :heal :boost :ult]]
+        (let [a (get e/abilities power) suffix (name power) card (by-id (str "power-" suffix))
+              ulti? (= power :ult) cd (max 0 (- (get-in p [:cooldowns power] 0) now))
+              active-until (case power :dash (:dash-until p) :shield (if (pos? (:shield p)) (:shield-until p) 0)
+                                 :heal (:heal-until p) :boost (:boost-until p) :ult (:ult-at p))
+              active-ms (max 0 (- active-until now))
+              ready? (if ulti? (>= (:ulti p) 100) (zero? cd))
+              progress (if ulti? (/ (:ulti p) 100) (- 1 (/ cd (:cooldown a))))
+              active-pct (if ulti? (/ active-ms 650) (/ active-ms (:duration a)))
+              status (cond ulti? (if ready? "LISTA" (str (js/Math.floor (:ulti p)) "%"))
+                           ready? "LISTO" :else (seconds cd))
+              active-label (cond (pos? active-ms) (str (if ulti? "IMPACTO " "ACTIVO ") (seconds active-ms))
+                                 ulti? "CARGA AL COMBATIR"
+                                 (and (= power :heal) (= 100 (:hp p))) "VIDA COMPLETA"
+                                 ready? "DISPONIBLE" :else "RECARGANDO")]
+          (css! card "--progress" (e/clamp progress 0 1))
+          (.toggle (.-classList card) "ready" ready?)
+          (.toggle (.-classList card) "cooling" (not ready?))
+          (.toggle (.-classList card) "is-active" (pos? active-ms))
+          (.setAttribute card "aria-label" (str (:name a) ", " (:key a) ", " status ", " active-label))
+          (text! (str suffix "-cooldown") status) (text! (str suffix "-active") active-label)
+          (css! (by-id (str suffix "-bar")) "width" (str (* 100 (e/clamp (if (and ulti? (zero? active-ms)) progress active-pct) 0 1)) "%"))))
+      (refresh-score! world))))
+
+(defn present-events! [world now]
+  (let [events (filter #(> (:id %) @announced-event) (:events world)) you (:you @client)]
+    (doseq [event events]
+      (case (:kind event)
+        :round-start (announce! "LA ARENA ES TUYA")
+        :drop (announce! "SUMINISTRO EN CAMINO")
+        :kill (do
+                (let [attacker (get-in world [:players (:attacker event) :name] "Arena")
+                      victim (get-in world [:players (:player event) :name] "Jugador")
+                      line (node "div" "kill-line" (str attacker "  /  " victim))]
+                  (.prepend (by-id "kill-feed") line)
+                  (when (> (.-childElementCount (by-id "kill-feed")) 3) (.remove (.-lastElementChild (by-id "kill-feed"))))
+                  (js/setTimeout #(.remove line) 4500))
+                (when (= you (:attacker event)) (announce! "BAJA CONFIRMADA")))
+        :ult-cast (when (= you (:player event)) (text! "game-message" "Nova fijada. El área marcada explota en 0,65 s."))
+        :pickup (when (= you (:player event)) (text! "game-message" "Mejora recogida. Mira tu arma y tus recursos."))
+        :dash (when (= you (:player event)) (text! "game-message" "Dash: inmunidad durante 0,18 s. Recarga de 2,5 s."))
+        :shield (when (= you (:player event)) (text! "game-message" "Escudo activo 5 s. La recarga de 10 s ya comenzó."))
+        :heal (when (= you (:player event)) (text! "game-message" "Vida recuperada. Curación vuelve en 12 s."))
+        :boost (when (= you (:player event)) (text! "game-message" "Potencia activa 6 s. +15 de daño por proyectil."))
+        nil))
+    (when (seq events) (reset! announced-event (:event-seq world)))
+    (view/consume! world you now)))
+
+(defn predicted-player [p input dt now]
+  (if (and p (:alive p))
+    (let [w {:players {(:id p) p} :time now :events [] :event-seq 0}
+          w (if (some #{:dash} (:actions input)) (e/activate w (:id p) :dash input) w)]
+      (e/move-player (get-in w [:players (:id p)]) input dt now)) p))
+(defn begin-match! []
+  (view/reset!fx) (reset! announced-event 0) (reset! accumulator 0) (reset! score-render-key nil)
+  (clear! (by-id "kill-feed")) (hidden! "scoreboard" true) (screen! "juego") (view/resume-audio!))
+(defn start-training! []
+  (when (= :online (:mode @client)) (send! {:type :leave}))
+  (save-preferences!)
+  (let [world (e/training (:name (identity-message)) (:skin @client) 0)]
+    (swap! client assoc :mode :training :world world :previous world :you "you" :code nil :pending [] :predicted nil)
+    (begin-match!) (update-hud! world 0) (announce! "ENTRENAMIENTO · NOVA LISTA EN F")))
 (defn leave! []
-  (swap! game assoc :running false)
-  (reset! keys-down #{})
-  (swap! mouse assoc :down false)
-  (show-screen! "inicio"))
+  (when (= :online (:mode @client)) (send! {:type :leave}))
+  (swap! client assoc :mode :none :world nil :previous nil :code nil :pending [] :predicted nil)
+  (hidden! "scoreboard" true) (screen! "inicio") (send! {:type :list}))
 
-(.addEventListener (.getElementById js/document "start-game") "click" start!)
-(.addEventListener (.getElementById js/document "restart-game") "click" start!)
-(.addEventListener (.getElementById js/document "leave-game") "click" leave!)
+(defn interpolate [previous current alpha]
+  (reduce-kv
+    (fn [w id p]
+      (if-let [old (get-in previous [:players id])]
+        (if (and (= (:alive old) (:alive p)) (< (e/distance (:x old) (:y old) (:x p) (:y p)) 110))
+          (-> w (assoc-in [:players id :x] (+ (:x old) (* alpha (- (:x p) (:x old)))))
+                (assoc-in [:players id :y] (+ (:y old) (* alpha (- (:y p) (:y old)))))) w) w)) current (:players current)))
 
-(.forEach (.querySelectorAll js/document "[data-fighter]")
-          (fn [button]
-            (.addEventListener button "click"
-              (fn []
-                (reset! selected (.-fighter (.-dataset button)))
-                (.forEach (.querySelectorAll js/document "[data-fighter]")
-                          (fn [card] (.remove (.-classList card) "active")))
-                (.add (.-classList button) "active")))))
+(declare connect!)
+(defn receive! [message]
+  (case (:type message)
+    :welcome
+    (do (swap! client assoc :online true :connection-id (:id message) :info (:info message) :rooms (:rooms message))
+        (text! "connection" "ANFITRIÓN CONECTADO") (.add (.-classList (by-id "connection")) "online")
+        (disable! "create-room" false) (disable! "join-room" false)
+        (when (= :internet (get-in message [:info :scope]))
+          (set! (.-value (by-id "room-visibility")) "internet")
+          (set! (.-disabled (.-firstElementChild (by-id "room-visibility"))) true))
+        (render-rooms! (:rooms message))
+        (when @pending-invite
+          (set! (.-value (by-id "room-code")) @pending-invite)
+          (toast! "Invitación cargada. Elige tu nombre y pulsa UNIRME.")
+          (reset! pending-invite nil)))
+    :rooms (do (swap! client assoc :rooms (:rooms message)) (render-rooms! (:rooms message)))
+    :joined (do (swap! client assoc :you (:id message) :code (:code message) :mode :online :pending [] :seq 0)
+                (reset! room-render-key nil) (screen! "sala"))
+    :snapshot
+    (when (= :online (:mode @client))
+      (let [s @client w (:world message) t (perf) old (:world s)
+            starting? (and (= :playing (:phase w)) (not= :playing (:phase old)))
+            ack (get (:acks message) (:you s) -1)
+            pending (filterv #(> (:seq %) ack) (:pending s))
+            p (reduce (fn [p h] (predicted-player p (:input h) 0.025 (:time h)))
+                      (get-in w [:players (:you s)]) pending)]
+        (swap! client assoc :world w :previous (or old w) :received-at t :pending pending :predicted p
+               :code (:code message) :host (:host message) :name (:name message) :visibility (:visibility message))
+        (when starting? (begin-match!))
+        (when (or (= :waiting (:phase w)) (= "sala" (:screen @client))) (refresh-lobby!))
+        (when (= :finished (:phase w))
+          (clear-input!) (refresh-score! w)
+          (when (= "juego" (:screen @client)) (hidden! "scoreboard" false)))
+        (when (= "juego" (:screen @client)) (present-events! w (server-time)))))
+    :left (when (= :online (:mode @client)) (swap! client assoc :mode :none :world nil :code nil) (screen! "inicio"))
+    :pong (when (number? (:sent message)) (swap! client assoc :rtt (- (perf) (:sent message))))
+    :error (toast! (:message message))
+    nil))
+(defn connect! []
+  (when (contains? #{"http:" "https:"} (.-protocol js/location))
+    (let [ws (js/WebSocket. (str (if (= "https:" (.-protocol js/location)) "wss://" "ws://") (.-host js/location) "/ws"))]
+      (reset! socket ws)
+      (set! (.-onmessage ws) (fn [event] (try (receive! (reader/read-string (.-data event)))
+                                            (catch :default err (js/console.error "Protocolo de sala:" err)))))
+      (set! (.-onclose ws)
+            (fn [_]
+              (swap! client assoc :online false) (text! "connection" "SIN CONEXIÓN")
+              (.remove (.-classList (by-id "connection")) "online")
+              (disable! "create-room" true) (disable! "join-room" true)
+              (when (= :online (:mode @client)) (leave!) (toast! "Se perdió el anfitrión. La sala se cerró en este navegador."))
+              (js/setTimeout connect! 3000)))
+      (set! (.-onerror ws) (fn [_] nil)))))
 
-(def game-keys #{"w" "a" "s" "d" "q" "e" "r" "shift" " " "arrowup" "arrowdown" "arrowleft" "arrowright"})
+(defn copy-invite! []
+  (let [url (invite-url)]
+    (if (and (.-clipboard js/navigator) (.-isSecureContext js/window))
+      (-> (.writeText (.-clipboard js/navigator) url) (.then #(toast! "Enlace copiado."))
+          (.catch #(toast! "Selecciona y copia el enlace de invitación.")))
+      (do (.select (by-id "invite-url"))
+          (if (.execCommand js/document "copy") (toast! "Enlace copiado.") (toast! "Pulsa Ctrl+C para copiar el enlace seleccionado."))))))
+(defn show-qr! []
+  (let [library (aget js/window "qrcodegen") klass (aget library "QrCode")
+        qr (.call (aget klass "encodeText") klass (invite-url) (aget (aget klass "Ecc") "MEDIUM"))
+        size (aget qr "size") get-module (aget qr "getModule")
+        path (apply str (for [y (range size) x (range size) :when (.call get-module qr x y)]
+                          (str "M" (+ x 4) "," (+ y 4) "h1v1h-1z")))
+        svg (.createElementNS js/document "http://www.w3.org/2000/svg" "svg")
+        shape (.createElementNS js/document "http://www.w3.org/2000/svg" "path")]
+    (.setAttribute svg "viewBox" (str "0 0 " (+ size 8) " " (+ size 8)))
+    (.setAttribute svg "shape-rendering" "crispEdges") (.setAttribute svg "aria-label" "Código QR de invitación")
+    (.setAttribute shape "d" path) (.setAttribute shape "fill" "#102027") (.appendChild svg shape)
+    (.replaceChildren (by-id "qr-code") svg) (text! "qr-link" (invite-url)) (.showModal (by-id "qr-dialog"))))
 
-(.addEventListener js/window "keydown"
-  (fn [event]
-    (let [key (.toLowerCase (.-key event))]
-      (when (and (:running @game) (contains? game-keys key))
-        (.preventDefault event)
-        (swap! keys-down conj key)
-        (when-not (.-repeat event)
-          (let [now (js/performance.now)]
-            (case key
-              "shift" (activate-power! :dash now)
-              "q"     (activate-power! :shield now)
-              "e"     (activate-power! :heal now)
-              "r"     (activate-power! :boost now)
-              nil)))))))
+(defn bind! []
+  (on! "start-game" "click" start-training!) (on! "restart-game" "click" start-training!)
+  (on! "leave-game" "click" leave!) (on! "leave-room" "click" leave!)
+  (on! "create-room" "click" #(do (save-preferences!) (send! (merge (identity-message) {:type :create :room-name (.-value (by-id "room-name"))
+                                                                                     :visibility (keyword (.-value (by-id "room-visibility")))}))))
+  (on! "join-form" "submit" (fn [event] (.preventDefault event) (join! (.-value (by-id "room-code")))))
+  (on! "refresh-rooms" "click" #(send! {:type :list}))
+  (doseq [id ["start-round" "rematch"]] (on! id "click" #(do (view/resume-audio!) (send! {:type :start}))))
+  (on! "return-room" "click" #(do (screen! "sala") (reset! room-render-key nil) (refresh-lobby!)))
+  (on! "copy-invite" "click" copy-invite!) (on! "qr-open" "click" show-qr!)
+  (on! "score-toggle" "click" #(hidden! "scoreboard" (not (.-hidden (by-id "scoreboard")))))
+  (on! "score-close" "click" #(hidden! "scoreboard" true))
+  (doseq [[button dialog] [["help-open" "help-dialog"] ["settings-open" "settings-dialog"] ["host-help" "host-dialog"]]]
+    (on! button "click" #(do (clear-input!) (.showModal (by-id dialog)))))
+  (doseq [el (array-seq (.querySelectorAll js/document "[data-close]"))]
+    (.addEventListener el "click" #(.close (by-id (.getAttribute el "data-close")))))
+  (doseq [el (array-seq (.querySelectorAll js/document "dialog"))]
+    (.addEventListener el "close" #(when (= "juego" (:screen @client)) (.focus view/canvas))))
+  (on! "fullscreen" "click" #(if (.-fullscreenElement js/document)
+                                  (.exitFullscreen js/document)
+                                  (-> (.requestFullscreen (.-documentElement js/document))
+                                      (.catch (fn [_] (toast! "Usa F11 para ampliar la ventana."))))))
+  (doseq [card (array-seq (.querySelectorAll js/document "[data-fighter]"))]
+    (.addEventListener card "click"
+      (fn [] (let [skin (.getAttribute card "data-fighter")]
+               (swap! client assoc :skin skin)
+               (doseq [c (array-seq (.querySelectorAll js/document "[data-fighter]"))]
+                 (let [active? (= skin (.getAttribute c "data-fighter"))]
+                   (.toggle (.-classList c) "active" active?) (.setAttribute c "aria-pressed" (str active?))))
+               (save-preferences!)))))
+  (on! "player-name" "change" save-preferences!)
+  (on! "shake-setting" "change" #(do (swap! view/settings assoc :shake (js/parseFloat (.-value (by-id "shake-setting")))) (save-preferences!)))
+  (on! "particles-setting" "change" #(do (swap! view/settings assoc :particles (keyword (.-value (by-id "particles-setting")))) (save-preferences!)))
+  (on! "sound-setting" "change" #(do (swap! view/settings assoc :sound (.-checked (by-id "sound-setting"))) (view/resume-audio!) (save-preferences!))))
 
-(.addEventListener js/window "keyup"
-  (fn [event]
-    (let [key (.toLowerCase (.-key event))]
-      (swap! keys-down disj key))))
+(defn input-events! []
+  (.addEventListener js/window "keydown"
+    (fn [event]
+      (when (and (= "juego" (:screen @client)) (nil? (.querySelector js/document "dialog[open]")))
+        (let [key (.toLowerCase (.-key event)) power (get {"shift" :dash "q" :shield "e" :heal "r" :boost "f" :ult} key)]
+          (when (contains? #{"w" "a" "s" "d" "shift" "q" "e" "r" "f" "tab" " "} key)
+            (.preventDefault event) (swap! keys-down conj key)
+            (when-not (.-repeat event)
+              (view/resume-audio!)
+              (when power
+                (let [p (get-in @client [:world :players (:you @client)])]
+                  (cond
+                    (and (= :ult power) (< (:ulti p 0) 100)) (toast! "Nova se carga al hacer daño, eliminar y con el tiempo.")
+                    (and (= :heal power) (= 100 (:hp p))) (text! "game-message" "Tu vida está completa. La curación no se consume.")
+                    :else (swap! actions conj power))))
+              (when (= key "tab") (hidden! "scoreboard" false))))))))
+  (.addEventListener js/window "keyup"
+    (fn [event] (let [key (.toLowerCase (.-key event))]
+                  (swap! keys-down disj key)
+                  (when (and (= key "tab") (not= :finished (get-in @client [:world :phase]))) (hidden! "scoreboard" true)))))
+  (.addEventListener js/window "blur" clear-input!)
+  (.addEventListener js/document "visibilitychange" clear-input!)
+  (let [aim! (fn [event]
+               (let [r (.getBoundingClientRect view/canvas)]
+                 (swap! mouse assoc :x (e/clamp (* 960 (/ (- (.-clientX event) (.-left r)) (.-width r))) 0 960)
+                        :y (e/clamp (* 600 (/ (- (.-clientY event) (.-top r)) (.-height r))) 0 600))))]
+    (.addEventListener view/canvas "pointermove" aim!)
+    (.addEventListener view/canvas "pointerdown"
+      (fn [event] (when (= 0 (.-button event)) (aim! event) (swap! mouse assoc :down true) (view/resume-audio!) (.focus view/canvas))))
+    (.addEventListener js/window "pointerup" #(swap! mouse assoc :down false))
+    (.addEventListener view/canvas "contextmenu" #(.preventDefault %))))
 
-(.addEventListener js/window "blur"
-  (fn []
-    (reset! keys-down #{})
-    (swap! mouse assoc :down false)))
-
-(defn aim! [event]
-  (let [rect (.getBoundingClientRect canvas)
-        x (* (/ (- (.-clientX event) (.-left rect)) (.-width rect)) 960)
-        y (* (/ (- (.-clientY event) (.-top rect)) (.-height rect)) 600)]
-    (swap! mouse assoc :x (clamp x 0 960) :y (clamp y 0 600))))
-
-(.addEventListener canvas "pointermove" aim!)
-(.addEventListener canvas "pointerdown"
-  (fn [event]
-    (when (= (.-button event) 0)
-      (aim! event)
-      (swap! mouse assoc :down true)
-      (.focus canvas))))
-(.addEventListener js/window "pointerup" (fn [] (swap! mouse assoc :down false)))
-(.addEventListener canvas "contextmenu" (fn [event] (.preventDefault event)))
-
-;; ============================================================================
-;; 8. BUCLE PRINCIPAL CON DELTA ACOTADO
-;; ============================================================================
-
-(def last-frame (atom 0))
-
+(defn simulation-step! []
+  (let [s @client input (controls)]
+    (reset! actions [])
+    (case (:mode s)
+      :training (let [w (:world s) t (+ (:time w) e/step-ms) next (e/step w {"you" input} 0.025 t)]
+                  (swap! client assoc :previous w :world next) (present-events! next t))
+      :online (when (and (:online s) (= :playing (get-in s [:world :phase])))
+                (let [seq-id (inc (:seq s)) t (server-time) p (predicted-player (:predicted s) input 0.025 t)]
+                  (send! (assoc input :type :input :seq seq-id))
+                  (swap! client assoc :seq seq-id :predicted p
+                         :pending (view/cap (conj (:pending s) {:seq seq-id :input input :time t}) 40))))
+      nil)))
 (defn tick [now]
-  (let [prev @last-frame
-        raw-dt (if (> prev 0) (/ (- now prev) 1000) 0.016)
-        elapsed (clamp raw-dt 0 0.25)]
+  (let [elapsed (min 100 (max 0 (- now @last-frame)))]
     (reset! last-frame now)
-    (when (:running @game)
-      ;; Pasos cortos conservan la velocidad real y evitan saltarse colisiones
-      ;; cuando la vista previa del navegador entrega pocos cuadros.
-      (loop [remaining elapsed
-             step-now (- now (* elapsed 1000))]
-        (when (> remaining 0.0001)
-          (let [dt (min remaining 0.025)
-                next-now (+ step-now (* dt 1000))]
-            (swap! game advance dt next-now)
-            (recur (- remaining dt) next-now))))
-      (draw! @game now)
-      (when (>= (- now @last-hud) 60)
-        (update-hud! @game now)
-        (reset! last-hud now)))
+    (when (and (= "juego" (:screen @client)) (:world @client))
+      (swap! accumulator + elapsed)
+      (loop [] (when (>= @accumulator e/step-ms) (simulation-step!) (swap! accumulator - e/step-ms) (recur)))
+      (let [{:keys [world previous mode you predicted received-at]} @client
+            t (if (= mode :training) (+ (:time world) @accumulator) (server-time))
+            alpha (if (= mode :training) (/ @accumulator e/step-ms) (e/clamp (/ (- now received-at) 50) 0 1))
+            display (interpolate previous world alpha)
+            display (if (and (= mode :online) predicted)
+                      (assoc-in display [:players you]
+                                (merge (get-in display [:players you])
+                                       (select-keys predicted [:x :y :angle :moving :dash-until :dash-dir]))) display)]
+        (view/draw! display you @mouse t (/ elapsed 1000))
+        (when (> (- now @last-hud) 60) (update-hud! world t) (reset! last-hud now))))
     (js/requestAnimationFrame tick)))
 
+(defn restore-preferences! []
+  (try
+    (when-let [stored (.getItem js/localStorage "clojure-arena/preferences")]
+      (let [{:keys [skin name settings]} (reader/read-string stored)]
+        (when (contains? e/skins skin) (swap! client assoc :skin skin))
+        (when (string? name) (set! (.-value (by-id "player-name")) (subs name 0 (min 18 (count name)))))
+        (when (map? settings) (swap! view/settings merge settings))))
+    (catch :default _ nil))
+  (when (view/reduced-motion?) (swap! view/settings assoc :shake 0 :particles :low))
+  (set! (.-value (by-id "shake-setting")) (str (:shake @view/settings)))
+  (set! (.-value (by-id "particles-setting")) (name (:particles @view/settings)))
+  (set! (.-checked (by-id "sound-setting")) (:sound @view/settings))
+  (doseq [card (array-seq (.querySelectorAll js/document "[data-fighter]"))]
+    (let [selected? (= (:skin @client) (.getAttribute card "data-fighter"))]
+      (.toggle (.-classList card) "active" selected?) (.setAttribute card "aria-pressed" (str selected?)))))
+
+(build-abilities!) (restore-preferences!) (bind!) (input-events!) (connect!)
+(when (= "file:" (.-protocol js/location))
+  (text! "connection" "ENTRENAMIENTO SIN RED")
+  (text! "host-hint" "Para salas compartidas ejecuta bb serve y abre http://localhost:8080."))
+(js/setInterval #(when (:online @client) (send! {:type :ping :sent (perf)})) 2000)
+(js/setInterval #(when (:online @client)
+                   (-> (js/fetch "/api/info") (.then (fn [r] (.text r)))
+                       (.then (fn [s] (swap! client assoc :info (reader/read-string s)) (refresh-invite!)))
+                       (.catch (fn [_] nil)))) 5000)
 (js/requestAnimationFrame tick)

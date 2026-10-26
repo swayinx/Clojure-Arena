@@ -1,0 +1,8 @@
+{:main arena.client
+ :output-to "public/client.js"
+ :output-dir "build/cljs"
+ :optimizations :advanced
+ :infer-externs true
+ :language-out :ecmascript-2018
+ :pretty-print false
+ :warnings {:infer-warning false}}

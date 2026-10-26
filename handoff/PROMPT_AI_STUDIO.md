@@ -1,3 +1,9 @@
+# Archivo histórico: prompt del prototipo individual
+
+Este texto se conserva como antecedente. **No describe la versión actual ni debe usarse para modificarla**: ahora hay multijugador, servidor Clojure y compilador oficial de ClojureScript, sin Squint ni esbuild. Las instrucciones vigentes están en [README.md](../README.md) y [docs/ARQUITECTURA.md](../docs/ARQUITECTURA.md).
+
+---
+
 Trabaja SOBRE el proyecto adjunto «Clojure Arena». Es una arena jugable local para una persona. No lo reemplaces por una app nueva ni conviertas el juego a React, TypeScript, JavaScript escrito a mano, Phaser u otro motor. Lee primero README.md, package.json, public/index.html, public/style.css, src/arena/client.cljs y los cuatro sprites en public/art/. Conserva el flujo de compilación ClojureScript con Squint y esbuild. public/client.js es un archivo generado: nunca lo edites como fuente.
 
 OBJETIVO

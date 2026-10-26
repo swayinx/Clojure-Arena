@@ -1,0 +1,12 @@
+{:paths ["src" "test" "scripts"]
+ :min-bb-version "1.12.213"
+ :tasks
+ {dev {:doc "Compilar y servir en http://localhost:8080" :depends [build] :task (exec 'arena.server/-main)}
+  serve {:doc "Ejecutar la versión compilada incluida; no requiere Java ni Node" :task (exec 'arena.server/-main)}
+  internet {:doc "Servidor + enlace temporal (requiere cloudflared)" :task (apply (requiring-resolve 'arena.server/-main) ["--internet"])}
+  build {:doc "Compilar ClojureScript oficial (requiere Java 21)" :task (exec 'arena.build/-main)}
+  test {:doc "Pruebas del motor funcional y del protocolo" :task (exec 'arena.test-runner/-main)}
+  test-network {:doc "20 clientes reales contra bb serve (requiere Node 22+ y Java 21)" :depends [build] :task (exec 'arena.build/network-test!)}
+  test-client {:doc "Comprobar bundle y controles con DOM simulado, sin navegador" :depends [build] :task (exec 'arena.build/client-test!)}
+  verify {:doc "Compilar y ejecutar pruebas de motor y cliente" :depends [build test test-client]}
+  watch {:doc "Recompilar al cambiar archivos .cljs/.cljc" :task (apply (requiring-resolve 'arena.build/-main) ["--watch"])}}}
