@@ -60,6 +60,12 @@
 (def ability-descriptions
   {:dash ["Inmune 0,18 s" "DASH EVASIVO"] :shield ["60 puntos · 5 s" "ESCUDO"]
    :heal ["+35 de vida" "CURACIÓN"] :boost ["+15 daño · 6 s" "POTENCIA"] :ult ["Área · 65 daño" "NOVA / ULTI"]})
+(def ability-icons
+  {:dash "<path d='M3 8h6M2 12h4M3 16h6M11 5l7 7-7 7M17 5l6 7-6 7'/>"
+   :shield "<path d='M12 2l8 3v6c0 5-4 9-8 11-4-2-8-6-8-11V5z'/><path d='M12 6v11'/>"
+   :heal "<path d='M9 3h6v6h6v6h-6v6H9v-6H3V9h6z'/>"
+   :boost "<path d='M13 2L4 14h7l-1 8 10-13h-7z'/><path d='M3 4h4M18 19h4'/>"
+   :ult "<circle cx='12' cy='12' r='9'/><path d='M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z'/>"})
 (defn build-abilities! []
   (doseq [power [:dash :shield :heal :boost :ult]]
     (let [a (get e/abilities power) b (node "button" (str "ability " (when (= power :ult) "ult")) "")
@@ -68,7 +74,8 @@
       (.setAttribute b "aria-label" (str (:name a) ", tecla " (:key a) ". " description))
       (set! (.-title b) (str title " · " description)) (css! b "--ability" (:color a))
       (set! (.-innerHTML b)
-            (str "<span class='ability-ring'><kbd>" (:key a) "</kbd></span>"
+            (str "<span class='ability-ring'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
+                 (get ability-icons power) "</svg></span><kbd class='ability-key'>" (:key a) "</kbd>"
                  "<span class='ability-copy'><b>" (:name a) "</b><strong id='" suffix "-cooldown'>LISTO</strong><small>" description "</small></span>"
                  "<span class='ability-duration'><span id='" suffix "-active'>DISPONIBLE</span><span class='active-track'><i id='" suffix "-bar'></i></span></span>"))
       (.addEventListener b "click" #(do (swap! actions conj power) (view/resume-audio!) (.focus view/canvas)))
@@ -312,6 +319,14 @@
     (.setAttribute shape "d" path) (.setAttribute shape "fill" "#102027") (.appendChild svg shape)
     (.replaceChildren (by-id "qr-code") svg) (text! "qr-link" (invite-url)) (.showModal (by-id "qr-dialog"))))
 
+(defn toggle-fullscreen! []
+  (if (.-fullscreenElement js/document)
+    (.exitFullscreen js/document)
+    (if (.-requestFullscreen (.-documentElement js/document))
+      (-> (.requestFullscreen (.-documentElement js/document))
+          (.catch (fn [_] (toast! "El navegador no permitió pantalla completa. Usa F11."))))
+      (toast! "Usa F11 para activar pantalla completa en tu navegador."))))
+
 (defn bind! []
   (on! "start-game" "click" start-training!) (on! "restart-game" "click" start-training!)
   (on! "leave-game" "click" leave!) (on! "leave-room" "click" leave!)
@@ -330,10 +345,10 @@
     (.addEventListener el "click" #(.close (by-id (.getAttribute el "data-close")))))
   (doseq [el (array-seq (.querySelectorAll js/document "dialog"))]
     (.addEventListener el "close" #(when (= "juego" (:screen @client)) (.focus view/canvas))))
-  (on! "fullscreen" "click" #(if (.-fullscreenElement js/document)
-                                  (.exitFullscreen js/document)
-                                  (-> (.requestFullscreen (.-documentElement js/document))
-                                      (.catch (fn [_] (toast! "Usa F11 para ampliar la ventana."))))))
+  (on! "fullscreen" "click" toggle-fullscreen!)
+  (.addEventListener js/document "fullscreenchange"
+    #(do (text! "fullscreen" (if (.-fullscreenElement js/document) "SALIR DE PANTALLA COMPLETA" "PANTALLA COMPLETA"))
+         (.setAttribute (by-id "fullscreen") "aria-pressed" (str (boolean (.-fullscreenElement js/document))))))
   (doseq [card (array-seq (.querySelectorAll js/document "[data-fighter]"))]
     (.addEventListener card "click"
       (fn [] (let [skin (.getAttribute card "data-fighter")]
@@ -345,6 +360,8 @@
   (on! "player-name" "change" save-preferences!)
   (on! "shake-setting" "change" #(do (swap! view/settings assoc :shake (js/parseFloat (.-value (by-id "shake-setting")))) (save-preferences!)))
   (on! "particles-setting" "change" #(do (swap! view/settings assoc :particles (keyword (.-value (by-id "particles-setting")))) (save-preferences!)))
+  (on! "volume-setting" "input" #(do (swap! view/settings assoc :volume (/ (js/parseFloat (.-value (by-id "volume-setting"))) 100))
+                                    (view/resume-audio!) (save-preferences!)))
   (on! "sound-setting" "change" #(do (swap! view/settings assoc :sound (.-checked (by-id "sound-setting"))) (view/resume-audio!) (save-preferences!))))
 
 (defn input-events! []
@@ -421,6 +438,7 @@
   (set! (.-value (by-id "shake-setting")) (str (:shake @view/settings)))
   (set! (.-value (by-id "particles-setting")) (name (:particles @view/settings)))
   (set! (.-checked (by-id "sound-setting")) (:sound @view/settings))
+  (set! (.-value (by-id "volume-setting")) (str (* 100 (:volume @view/settings))))
   (doseq [card (array-seq (.querySelectorAll js/document "[data-fighter]"))]
     (let [selected? (= (:skin @client) (.getAttribute card "data-fighter"))]
       (.toggle (.-classList card) "active" selected?) (.setAttribute card "aria-pressed" (str selected?)))))

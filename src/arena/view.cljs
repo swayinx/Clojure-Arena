@@ -1,14 +1,13 @@
 (ns arena.view
   "Presentación: Canvas y audio. Los efectos visuales no modifican la simulación."
-  (:require [arena.engine :as e]))
+  (:require [arena.engine :as e] [arena.audio :as audio]))
 
 (def palette {"brasa" "#ff9474" "chispa" "#76e5d1" "mora" "#c6a2ff" "bastion" "#f6ce78"})
 (def canvas (.getElementById js/document "arena"))
 (def ctx (.getContext canvas "2d" #js {:alpha false}))
 (def motion (.matchMedia js/window "(prefers-reduced-motion: reduce)"))
-(defonce settings (atom {:shake 0.45 :particles :full :sound true}))
+(defonce settings (atom {:shake 0.45 :particles :full :sound true :volume 0.65}))
 (defonce effects (atom {:particles [] :rings [] :texts [] :ghosts [] :last-event 0 :shake 0 :hit-at -1000 :kill-at -1000}))
-(defonce audio-context (atom nil))
 (def sprites (into {} (map (fn [skin] (let [im (js/Image.)] (set! (.-src im) (str "art/" skin ".svg")) [skin im])) e/skins)))
 (defn reduced-motion? [] (.-matches motion))
 (defn cap [v n] (vec (take-last n v)))
@@ -33,33 +32,8 @@
   (.closePath ctx) (set! (.-fillStyle ctx) color) (.fill ctx))
 
 (defn resume-audio! []
-  (when (:sound @settings)
-    (try
-      (when-not @audio-context (reset! audio-context (js/AudioContext.)))
-      (when (= "suspended" (.-state @audio-context)) (.resume @audio-context))
-      (catch :default _ nil))))
-(defn tone! [frequency end-frequency duration type volume]
-  (when (and (:sound @settings) @audio-context (= "running" (.-state @audio-context)))
-    (let [ac @audio-context osc (.createOscillator ac) gain (.createGain ac) t (.-currentTime ac)]
-      (set! (.-type osc) type)
-      (.setValueAtTime (.-frequency osc) frequency t)
-      (.exponentialRampToValueAtTime (.-frequency osc) (max 20 end-frequency) (+ t duration))
-      (.setValueAtTime (.-gain gain) volume t)
-      (.exponentialRampToValueAtTime (.-gain gain) 0.001 (+ t duration))
-      (.connect osc gain) (.connect gain (.-destination ac)) (.start osc t) (.stop osc (+ t duration 0.02)))))
-(defn sound! [kind]
-  (case kind
-    :shot (tone! 240 70 0.07 "triangle" 0.045)
-    :hit (tone! 470 190 0.06 "square" 0.025)
-    :kill (do (tone! 190 45 0.25 "sawtooth" 0.035) (tone! 750 1200 0.13 "sine" 0.055))
-    :dash (tone! 340 100 0.16 "triangle" 0.065)
-    :shield (tone! 320 680 0.25 "sine" 0.06)
-    :heal (tone! 520 1040 0.35 "sine" 0.06)
-    :boost (tone! 170 480 0.25 "sawtooth" 0.025)
-    :ult-cast (tone! 180 1300 0.62 "sine" 0.055)
-    :ult (do (tone! 110 28 0.45 "sawtooth" 0.045) (tone! 740 100 0.30 "triangle" 0.04))
-    :pickup (tone! 660 1320 0.2 "sine" 0.06)
-    nil))
+  (audio/resume! (:sound @settings) (:volume @settings)))
+(defn sound! [kind] (audio/play! kind (:sound @settings)))
 (defn reset!fx [] (reset! effects {:particles [] :rings [] :texts [] :ghosts [] :last-event 0 :shake 0 :hit-at -1000 :kill-at -1000}))
 (defn particle-burst [x y n speed color now angle spread]
   (let [count (if (or (reduced-motion?) (= :low (:particles @settings))) (max 2 (quot n 3)) n)]
@@ -72,10 +46,10 @@
         color (get palette (get-in world [:players player :skin]) "#d9ed91")
         mine? (= you player) my-hit? (= you attacker)
         col (case kind :dash "#76f4ce" :shield "#6acfff" :heal "#a2f078" :boost "#ffbe67"
-                  :ult "#c7a0ff" :ult-cast "#c7a0ff" :hit (if (pos? absorbed) "#6acfff" "#ffe3a5")
+                  :ult (if mine? "#c7a0ff" "#ff817c") :ult-cast (if mine? "#c7a0ff" "#ff817c") :hit (if (pos? absorbed) "#6acfff" "#ffe3a5")
                   :kill color :pickup "#d9ed91" :wall "#a8c5b9" color)
         n (case kind :shot 3 :hit 7 :kill 26 :dash 13 :ult 46 :heal 10 :shield 12 :boost 16 :wall 3 :pickup 18 0)
-        radius (case kind :ult 130 :kill 75 :dash 44 :shield 57 :heal 52 :boost 55 :hit 25 :pickup 50 0)
+        radius (case kind :ult 125 :kill 75 :dash 44 :shield 57 :heal 52 :boost 55 :hit 25 :pickup 50 0)
         text (case kind :hit (if (pos? amount) (str "−" amount) (str "ESCUDO −" absorbed))
                    :heal (str "+" amount) :kill (when my-hit? "+1 BAJA")
                    :pickup (case (:item event) :rapid "RÁFAGA" :scatter "DISPERSOR" :heal "+35 VIDA" :shield "+60 ESCUDO" :energy "+35 NOVA" "MEJORA")
@@ -83,7 +57,7 @@
     (when (or mine? my-hit? (= kind :ult) (= kind :ult-cast)) (sound! kind))
     (cond-> fx
       (and x y (pos? n)) (update :particles #(cap (into % (particle-burst x y n (if (= kind :ult) 340 210) col now (or angle 0) (if (= kind :shot) 0.3 e/pi))) 160))
-      (and x y (pos? radius)) (update :rings #(cap (conj % {:x x :y y :color col :max radius :born now :until (+ now (if (= kind :ult) 600 360)) :kind kind}) 40))
+      (and x y (pos? radius)) (update :rings #(cap (conj % {:x x :y y :color col :max radius :born now :until (+ now (if (= kind :ult) 900 360)) :kind kind}) 40))
       (and x y text) (update :texts #(cap (conj % {:x x :y (- y 36) :text text :color col :born now :until (+ now 850)}) 24))
       (and my-hit? (= kind :hit)) (assoc :hit-at now)
       (and my-hit? (= kind :kill)) (assoc :kill-at now :shake 6)
@@ -181,13 +155,50 @@
 
 (defn draw-ultimates! [world you now]
   (doseq [[id p] (:players world) :when (and (:alive p) (> (:ult-at p) now))]
-    (let [{:keys [x y]} (:ult-target p) remaining (/ (- (:ult-at p) now) 650)
-          color (if (= id you) "#c7a0ff" "#ff817c")]
-      (circle x y 125 (str color "18"))
-      (.setLineDash ctx #js [8 6]) (ring x y 125 (str color "aa") 2) (.setLineDash ctx #js [])
-      (ring x y (* 125 (- 1 remaining)) color 3)
-      (line (- x 9) y (+ x 9) y color 2) (line x (- y 9) x (+ y 9) color 2)
-      (label (str "NOVA " (.toFixed (/ (- (:ult-at p) now) 1000) 1)) x (- y 138) color 11))))
+    (let [{:keys [x y]} (:ult-target p)
+          progress (e/clamp (- 1 (/ (- (:ult-at p) now) 650)) 0 1)
+          color (if (= id you) "#c7a0ff" "#ff817c")
+          spin (if (reduced-motion?) 0 (* progress 1.8))
+          inward (- 125 (* 98 progress))]
+      ;; El borde fijo muestra el área real; las chispas convergen antes del impacto.
+      (circle x y 125 (str color "12"))
+      (ring x y 125 (str color "85") 2)
+      (arc x y 128 (- (/ e/pi 2)) (+ (- (/ e/pi 2)) (* 2 e/pi progress)) color 3)
+      (ring x y inward (str color "70") 1.5)
+      (doseq [i (range 6)]
+        (let [a (+ spin (* i (/ e/pi 3)))
+              xx (+ x (* inward (e/cos a))) yy (+ y (* inward (e/sin a)))]
+          (line (+ x (* 122 (e/cos a))) (+ y (* 122 (e/sin a))) xx yy (str color "30") 1)
+          (circle xx yy (+ 2 (* progress 2)) color)))
+      (.save ctx) (.translate ctx x y) (.rotate ctx spin)
+      (let [r (+ 7 (* progress 12))]
+        (polygon [[0 (- r)] [r 0] [0 r] [(- r) 0]] color)
+        (polygon [[0 -6] [6 0] [0 6] [-6 0]] "#fbf3ff"))
+      (.restore ctx)
+      (label (str (if (= id you) "TU NOVA " "PELIGRO ") (.toFixed (/ (- (:ult-at p) now) 1000) 1))
+             x (e/clamp (- y 138) 22 574) color 11))))
+
+(defn nova-burst! [r progress]
+  (let [{:keys [x y color]} r
+        ease (- 1 (js/Math.pow (- 1 progress) 4))
+        radius (* 125 ease)
+        flash (max 0 (- 1 (* progress 5)))
+        spin (if (reduced-motion?) 0 (* progress 0.4))]
+    ;; Destello localizado, frente expansivo y residuos. Nunca flash de pantalla.
+    (circle x y 125 (str color "0c"))
+    (circle x y radius (str color "28"))
+    (ring x y radius color (max 1 (* 9 (- 1 progress))))
+    (ring x y (* radius 0.79) "#f5eaff" (max 1 (* 4 (- 1 progress))))
+    (doseq [i (range 12)]
+      (let [a (+ spin (* i (/ e/pi 6)))
+            inner (* radius (+ 0.58 (* 0.28 progress)))]
+        (line (+ x (* inner (e/cos a))) (+ y (* inner (e/sin a)))
+              (+ x (* radius (e/cos a))) (+ y (* radius (e/sin a))) color 2)))
+    (when (pos? flash)
+      (.save ctx) (set! (.-globalAlpha ctx) (* flash (if (reduced-motion?) 0.3 0.85)))
+      (circle x y (+ 10 (* 28 flash)) "#fff5ff")
+      (polygon [[(- x 9) y] [(- x 3) (- y 155)] [(+ x 3) (- y 155)] [(+ x 9) y]] color)
+      (.restore ctx))))
 
 (defn draw-shots! [world you]
   (doseq [s (:shots world)]
@@ -263,10 +274,9 @@
     (let [progress (e/clamp (/ (- now (:born r)) (- (:until r) (:born r))) 0 1)
           ease (- 1 (js/Math.pow (- 1 progress) 3)) radius (* (:max r) ease)]
       (.save ctx) (set! (.-globalAlpha ctx) (- 1 progress))
-      (when (= :ult (:kind r))
-        (circle (:x r) (:y r) radius (str (:color r) "25"))
-        (ring (:x r) (:y r) (* 0.83 radius) "#eedbff" 2))
-      (ring (:x r) (:y r) radius (:color r) (if (= :ult (:kind r)) 5 2))
+      (if (= :ult (:kind r))
+        (nova-burst! r progress)
+        (ring (:x r) (:y r) radius (:color r) 2))
       (.restore ctx)))
   (doseq [p (:particles @effects)]
     (.save ctx) (set! (.-globalAlpha ctx) (e/clamp (/ (- (:until p) now) 260) 0 1))

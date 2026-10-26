@@ -47,7 +47,7 @@ Los cuatro personajes conservan las mismas estadísticas: la elección es visual
 
 ## 4. HUD sin desplazamiento
 
-La página es una aplicación de altura de ventana (`100dvh`), con áreas de tamaño flexible y una arena que conserva la proporción 8:5. No se calcula el tamaño del Canvas a partir de todo el ancho si eso supera la altura disponible. La arena se reduce para dejar sitio al HUD.
+La página es una aplicación de altura de ventana (`100dvh`), con áreas de tamaño flexible y una arena que conserva la proporción 8:5. No se calcula el tamaño del Canvas a partir de todo el ancho si eso supera la altura disponible. En combate se aprovecha la altura disponible: el HUD ocupa una columna lateral de 168 px (150 px en ventanas bajas), en lugar de una fila alta bajo el mapa. El marco se ajusta al mapa y la columna, sin rellenar los lados con grandes paneles vacíos. En ventanas estrechas se mantiene una fila inferior compacta.
 
 Cada habilidad tiene:
 
@@ -97,3 +97,11 @@ La elección para esta exposición es **PC anfitriona + túnel opcional**. No se
 ## Qué se dejó fuera deliberadamente
 
 No se añadieron cuentas, tienda, progresión persistente, mapas enormes, inventario complejo o habilidades distintas por personaje. El alcance cubre el combate, las salas y los conceptos que exige el curso. Después de probar con compañeros, las mejoras siguientes deberían salir de problemas observados, no de aumentar indiscriminadamente las partículas o las dependencias.
+
+## Ajuste a partir de la prueba del usuario
+
+La captura del 26 de octubre mostró un mapa pequeño dentro de una franja muy ancha, con dos cabeceras y tarjetas grandes bajo la arena. Se compactaron las cabeceras, se retiró el pie durante combate y se movió el HUD al lateral. La geometría preserva la escala uniforme; no deforma el mapa ni cambia las reglas o el apuntado.
+
+Nova conserva 650 ms de aviso y el radio de daño de 125: un borde fijo marca el área, las chispas convergen y la detonación dibuja núcleo, rayo vertical y onda expansiva. El efecto se limita a esa zona, con menor movimiento cuando el sistema lo solicita.
+
+Para sonido se consultaron las publicaciones del autor ([Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds), [Digital Audio](https://kenney.nl/assets/digital-audio)), su publicación en [OpenGameArt](https://opengameart.org/content/sci-fi-sounds) y experiencias de desarrolladores en [r/gamedev](https://www.reddit.com/r/gamedev/comments/1tu4lm8/sourcing_sound_effects/). Las recomendaciones comunitarias orientan la búsqueda; la licencia se verificó en las páginas y archivos del autor. Se escogieron muestras cortas, locales y con categorías distintas por acción. No se afirma haber realizado escucha comparativa desde la herramienta.

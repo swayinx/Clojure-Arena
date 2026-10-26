@@ -162,7 +162,7 @@ bb -cp src -e '(require (quote [arena.engine :as e]))
 
 La transparencia referencial permite razonar sustituyendo una llamada pura por su valor sin cambiar el comportamiento del resto del cálculo. Facilita probar daño, escudo e inmunidad con tiempos concretos.
 
-**No todas las funciones del programa son puras.** Dibujar, reproducir audio, leer teclas, generar IDs, consultar el reloj y enviar WebSockets son efectos. Se concentran en `server.clj`, `client.cljs` y `view.cljs`. Presentar una aplicación interactiva como “sin efectos secundarios” sería incorrecto. El diseño es un núcleo funcional con adaptadores de entrada/salida.
+**No todas las funciones del programa son puras.** Dibujar, reproducir audio, leer teclas, generar IDs, consultar el reloj y enviar WebSockets son efectos. Se concentran en `server.clj`, `client.cljs`, `view.cljs` y `audio.cljs`. Presentar una aplicación interactiva como “sin efectos secundarios” sería incorrecto. El diseño es un núcleo funcional con adaptadores de entrada/salida.
 
 ## 7. Expresiones, composición y control
 

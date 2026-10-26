@@ -113,6 +113,14 @@ El primer suministro se anuncia a los 8 s; después cae uno cada 9 s. Tarda 1 s 
 
 El arma básica **Pulso** vuelve al terminar la mejora. No hay munición ni recarga de cargadores en esta versión.
 
+### Pantalla completa, interfaz y sonido
+
+Pulsa **PANTALLA COMPLETA** arriba a la derecha. **Esc** vuelve a la ventana; **F11** es la alternativa del navegador. Durante combate se compactan las barras superiores y las habilidades pasan a una columna lateral, conservando la proporción del mapa. En ventanas estrechas aparecen en una barra inferior compacta.
+
+Los iconos indican dash (impulso), escudo, curación (cruz), potencia (rayo) y nova (estrella). El aro conserva la recarga y la barra pequeña muestra la duración activa. Los detalles completos están en **CÓMO JUGAR** y en la descripción al posar el cursor sobre una habilidad.
+
+**AJUSTES** permite regular volumen, silenciar y reducir cámara/partículas. Se usan 12 archivos de audio de Kenney con licencia CC0, incluidos localmente: [créditos y archivos](docs/RECURSOS.md). No necesitas Internet para oírlos en LAN. Abre siempre el juego mediante `http://…`, no como `file://`.
+
 ## 5. Modificar el código
 
 Instala **Java 21**. Node es opcional: se usa para las pruebas automatizadas del cliente y de conexiones, y como atajo de comandos npm.
@@ -175,8 +183,9 @@ Resultados y límites de las comprobaciones: [docs/PRUEBAS.md](docs/PRUEBAS.md).
 | `src/arena/engine.cljc` | Reglas puras e inmutables, compartidas entre Clojure y ClojureScript |
 | `src/arena/server.clj` | Agentes, salas, HTTP, WebSocket y túnel |
 | `src/arena/client.cljs` | Controles, interfaz, sincronización y predicción de movimiento |
-| `src/arena/view.cljs` | Canvas, partículas, sprites, cámara y audio |
-| `public/index.html`, `public/style.css` | Estructura y presentación de la página |
+| `src/arena/view.cljs` | Canvas, partículas, sprites y cámara |
+| `src/arena/audio.cljs` | Muestras de sonido, caché, mezcla y volumen |
+| `public/index.html`, `public/style.css`, `public/combat.css` | Estructura y presentación de la página |
 | `public/art/` | Cuatro personajes y ocho cuadros por personaje |
 | `test/arena/` | Pruebas de reglas, protocolo e integración |
 | `scripts/arena/build.clj` | Compilación reproducible y comprobación del compilador |

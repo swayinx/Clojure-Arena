@@ -11,7 +11,20 @@
 (def frames (atom []))
 (def draws (atom 0))
 (def console-errors (atom []))
+(def document-events (atom {}))
+(def audio-files (atom #{}))
+(def audio-starts (atom 0))
+(def volume-values (atom []))
+(def fullscreen-count (atom 0))
 (def noop (fn [& _]))
+(defn mock-audio []
+  (this-as self
+    (set! (.-state self) "running")
+    (js/Object.defineProperty self "currentTime" #js {:get #(/ @clock 1000)})
+    (set! (.-createGain self) (fn [] #js {:connect noop :disconnect noop :gain #js {:setTargetAtTime (fn [v & _] (swap! volume-values conj v))}}))
+    (set! (.-decodeAudioData self) (fn [bytes] (js/Promise.resolve bytes)))
+    (set! (.-createBufferSource self) (fn [] #js {:connect noop :disconnect noop :start #(swap! audio-starts inc)}))
+    self))
 (def context2d (js/Proxy. #js {} #js {:get (fn [target key] (or (aget target key) (fn [& _] (swap! draws inc))))}))
 (defn element [id]
   (or (get @elements id)
@@ -32,9 +45,15 @@
 (def document #js {:getElementById element :querySelectorAll (fn [_] #js []) :querySelector (fn [_] nil)
                    :createElement (fn [_] (element (str (random-uuid))))
                    :createElementNS (fn [& _] (element (str (random-uuid))))
-                   :addEventListener noop :execCommand (fn [_] true)
-                   :documentElement #js {:requestFullscreen (fn [] (js/Promise.resolve nil))}})
-(def sandbox #js {:document document :console #js {:log noop :error #(swap! console-errors conj %)}
+                   :addEventListener (fn [kind f] (swap! document-events assoc kind f)) :execCommand (fn [_] true)
+                   :documentElement #js {}})
+(defn fullscreen! [active]
+  (aset document "fullscreenElement" (when active #js {}))
+  ((get @document-events "fullscreenchange"))
+  (js/Promise.resolve nil))
+(aset (.-documentElement document) "requestFullscreen" #(do (swap! fullscreen-count inc) (fullscreen! true)))
+(aset document "exitFullscreen" #(fullscreen! false))
+(def sandbox #js {:document document :console #js {:log noop :error #(swap! console-errors conj %) :warn #(swap! console-errors conj %)}
                   :location #js {:protocol "file:" :origin "null" :hostname "" :host "" :search ""}
                   :navigator #js {} :performance #js {:now (fn [] @clock)}
                   :localStorage #js {:getItem (fn [_] nil) :setItem noop}
@@ -43,6 +62,12 @@
                   :matchMedia (fn [_] #js {:matches false})
                   :addEventListener (fn [kind f] (swap! listeners assoc kind f))
                   :URLSearchParams js/URLSearchParams
+                  :AudioContext mock-audio
+                  :fetch (fn [url]
+                           (let [bytes (.readFileSync fs (str "public/" url))]
+                             (check (= "OggS" (.toString (.subarray bytes 0 4))))
+                             (swap! audio-files conj url)
+                             (js/Promise.resolve #js {:ok true :arrayBuffer #(js/Promise.resolve bytes)})))
                   :Image (fn [] (this-as self (set! (.-complete self) true) (set! (.-naturalWidth self) 256)))})
 (aset sandbox "window" sandbox)
 (.createContext vm sandbox)
@@ -55,6 +80,7 @@
 (defn text [id] (.-textContent (element id)))
 (set! (.-value (element "player-name")) "Smoke")
 (click! "start-game")
+(defn run-checks! []
 (step! 5)
 (check (= "100 / 100" (text "health-text")))
 (check (= "LISTA" (text "ult-cooldown")))
@@ -70,6 +96,20 @@
 (click! "restart-game") (step! 5)
 (check (= "LISTA" (text "ult-cooldown")))
 (click! "qr-open")
+(click! "fullscreen")
+(check (= 1 @fullscreen-count))
+(check (= "SALIR DE PANTALLA COMPLETA" (text "fullscreen")))
+(click! "fullscreen")
+(check (= "PANTALLA COMPLETA" (text "fullscreen")))
+(check (= 12 (count @audio-files)) (str "Muestras cargadas: " (count @audio-files)))
+(check (pos? @audio-starts))
+(set! (.-value (element "volume-setting")) "25")
+((get @(aget (element "volume-setting") "callbacks") "input"))
+(check (= 0.25 (last @volume-values)))
+(set! (.-checked (element "sound-setting")) false)
+((get @(aget (element "sound-setting") "callbacks") "change"))
+(check (zero? (last @volume-values)))
 (check (empty? @console-errors))
-(println "CLIENTE: arranque del bundle, Canvas, Q, Shift, F, reinicio y QR sin excepciones.")
-(println "Esta prueba usa adaptadores simulados; no sustituye la revisión visual en navegador.")
+(println "CLIENTE: Canvas, Q, Shift, F, reinicio, QR, pantalla completa, 12 muestras, volumen y silencio correctos.")
+(println "Adaptadores simulados: no sustituye revisión visual ni escucha en navegador."))
+(js/setImmediate run-checks!)

@@ -216,7 +216,7 @@
 
 (def mime-types {"html" "text/html; charset=utf-8" "css" "text/css; charset=utf-8"
                  "js" "text/javascript; charset=utf-8" "svg" "image/svg+xml"
-                 "ttf" "font/ttf" "png" "image/png" "ico" "image/x-icon"})
+                 "ttf" "font/ttf" "png" "image/png" "ico" "image/x-icon" "ogg" "audio/ogg"})
 (defn response [status type body]
   {:status status :headers {"Content-Type" type "Cache-Control" "no-cache"
                             "X-Content-Type-Options" "nosniff" "Referrer-Policy" "same-origin"} :body body})

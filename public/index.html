@@ -14,6 +14,7 @@
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="combat.css" />
     <script defer src="vendor/qrcodegen.js"></script>
     <script defer src="client.js"></script>
   </head>
@@ -29,7 +30,7 @@
           ><button id="help-open" class="quiet">CÓMO JUGAR</button
           ><button id="settings-open" class="quiet">AJUSTES</button
           ><button id="fullscreen" class="quiet" title="Pantalla completa">
-            AMPLIAR
+            PANTALLA COMPLETA
           </button>
         </div>
       </header>
@@ -371,9 +372,35 @@
       ><label class="setting"
         >Sonido de combate<input id="sound-setting" type="checkbox" checked
       /></label>
+      <label class="setting"
+        >Volumen<input
+          id="volume-setting"
+          type="range"
+          min="0"
+          max="100"
+          value="65"
+          aria-label="Volumen del combate"
+      /></label>
       <p class="hint">
         Solo se mueve la arena; los indicadores permanecen fijos. Se respeta la
         preferencia de movimiento reducido de tu sistema.
+      </p>
+      <p class="audio-credit">
+        Sonidos:
+        <a
+          href="https://kenney.nl/assets/sci-fi-sounds"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Kenney · Sci-fi Sounds</a
+        >
+        y
+        <a
+          href="https://kenney.nl/assets/digital-audio"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Digital Audio</a
+        >
+        · CC0.
       </p>
     </dialog>
     <dialog id="host-dialog">
@@ -394,19 +421,22 @@
         </div>
         <div>
           <h3>DESDE INTERNET</h3>
-          <p>Instala cloudflared y ejecuta:</p>
+          <p>
+            Detén el servidor con Ctrl+C. Con cloudflared instalado, ejecuta:
+          </p>
           <code>bb internet</code>
           <p>
-            Comparte el enlace HTTPS temporal. Crea salas con acceso
-            <b>Internet</b>. El enlace funciona mientras tu PC y el túnel estén
-            encendidos.
+            Espera el enlace <b>https://…trycloudflare.com</b>. Abre el juego,
+            crea una sala <b>Internet</b> y comparte su invitación o QR. Tus
+            amigos abren ese enlace; no instalan nada.
           </p>
         </div>
       </div>
       <p class="help-note">
         El anfitrión ejecuta Clojure y calcula las partidas. El túnel transporta
         la página y el WebSocket. Elegir “Internet” no abre un túnel
-        automáticamente. Consulta README.md para la instalación.
+        automáticamente. Mantén la terminal y tu PC encendidas. No compartas
+        localhost: en la PC de tu amigo apuntaría a su propio equipo.
       </p>
     </dialog>
     <dialog id="qr-dialog">

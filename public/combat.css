@@ -1,0 +1,464 @@
+/* Combate: priorizar la altura del mapa; las instrucciones largas viven en Ayuda. */
+.app:has(#juego.active) {
+  max-width: none;
+  padding: 0 12px;
+  grid-template-rows: 34px minmax(0, 1fr);
+}
+.app:has(#juego.active) > footer {
+  display: none;
+}
+.app:has(#juego.active) .brand {
+  font-size: 15px;
+  gap: 7px;
+}
+.app:has(#juego.active) .brand-mark {
+  width: 23px;
+  height: 23px;
+  font-size: 11px;
+}
+.app:has(#juego.active) .top-actions {
+  gap: 16px;
+}
+.app:has(#juego.active) .topbar .quiet {
+  font-size: 9px;
+  padding: 5px 0;
+}
+#juego {
+  grid-template-columns: minmax(0, 1fr) 168px;
+  grid-template-rows: 32px minmax(0, 1fr) 22px;
+  gap: 5px 10px;
+  padding: 0 0 6px;
+  width: min(100%, calc((100dvh - 104px) * 1.6 + 178px));
+  margin: auto;
+}
+#juego .match-bar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  gap: 10px;
+}
+#juego .match-bar > div:first-child {
+  gap: 8px;
+}
+#juego .match-bar b {
+  font-size: 14px;
+}
+#juego .match-bar .eyebrow {
+  font-size: 8px;
+  margin: 0;
+}
+#juego .match-clock {
+  flex-direction: row;
+  gap: 8px;
+}
+#juego .match-clock strong {
+  font-size: 18px;
+}
+#juego .match-clock span {
+  font-size: 7px;
+}
+#juego .match-actions {
+  gap: 12px;
+}
+#juego .match-actions .quiet {
+  font-size: 9px;
+  padding: 4px 0;
+}
+#juego .arena-stage {
+  grid-column: 1;
+  grid-row: 2;
+  border: 0;
+  background: none;
+}
+#juego .arena-frame {
+  border-radius: 4px;
+  overflow: hidden;
+}
+#juego .combat-hud {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  min-width: 0;
+}
+#juego .vitals {
+  width: 100%;
+  display: block;
+  padding: 10px;
+  background: #142226;
+}
+#juego .vitals-name {
+  flex-direction: row;
+  margin-bottom: 8px;
+  gap: 5px;
+}
+#juego .vitals-name b {
+  font-size: 15px;
+}
+#juego .vitals-name > span {
+  font-size: 8px;
+}
+#juego .meter-label {
+  display: flex;
+  flex-direction: row;
+  font-size: 8px;
+  margin: 5px 0;
+}
+#juego .meter-label strong {
+  font-size: 8px;
+}
+#juego .meter {
+  height: 5px;
+}
+#juego .meter.shield {
+  height: 3px;
+}
+#juego #weapon-label {
+  font-size: 7px;
+  white-space: normal;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+#juego .abilities {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(5, 68px);
+  gap: 6px;
+  flex: none;
+}
+#juego .ability {
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+  grid-template-rows: 1fr 12px;
+  padding: 7px 8px;
+  gap: 3px 7px;
+  border-radius: 5px;
+}
+#juego .ability .ability-ring {
+  grid-column: 1;
+  grid-row: 1;
+  width: 32px;
+  height: 32px;
+}
+#juego .ability-ring:before {
+  inset: 2px;
+}
+#juego .ability-ring svg {
+  position: relative;
+  width: 21px;
+  height: 21px;
+  color: var(--ability);
+  z-index: 1;
+}
+#juego .ability-key {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  justify-self: end;
+  font: 700 10px Mono;
+  padding: 3px 5px;
+  color: #e3ebe4;
+  background: #0b171b;
+  border: 1px solid #445557;
+  border-bottom-width: 2px;
+}
+#juego .ability[data-power="dash"] .ability-key {
+  font-size: 7px;
+  padding: 3px;
+}
+#juego .ability-copy {
+  grid-column: 2;
+  grid-row: 1;
+}
+#juego .ability-copy b {
+  font-size: 12px;
+}
+#juego .ability-copy strong {
+  font-size: 9px;
+  margin-top: 3px;
+}
+#juego .ability-copy small {
+  display: none;
+}
+#juego .ability-duration {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+#juego .ability-duration > span:first-child {
+  margin: 0;
+  font: 6px Mono;
+  min-width: 78px;
+}
+#juego .ability-duration .active-track {
+  flex: 1;
+  height: 3px;
+  margin: 0;
+}
+#juego .combat-help {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  font-size: 7px;
+  gap: 10px;
+}
+#juego #game-message {
+  text-align: center;
+  font-size: 7px;
+}
+#juego #restart-game {
+  font-size: 8px;
+  white-space: nowrap;
+}
+#juego .scoreboard {
+  z-index: 8;
+}
+.audio-credit {
+  font: 9px/1.7 Mono;
+  color: #a6bbb5;
+  margin-top: 14px;
+}
+.audio-credit a {
+  color: #d5e9a8;
+}
+#volume-setting {
+  width: 140px;
+  accent-color: #d5e9a8;
+}
+
+/* Ventanas bajas: mismo mapa alto, indicadores más estrechos. */
+@media (max-height: 620px) and (min-width: 761px) {
+  #juego {
+    grid-template-columns: minmax(0, 1fr) 150px;
+    width: min(100%, calc((100dvh - 104px) * 1.6 + 160px));
+  }
+  #juego .combat-hud {
+    gap: 6px;
+  }
+  #juego .vitals {
+    padding: 7px;
+  }
+  #juego .vitals-name {
+    margin-bottom: 3px;
+  }
+  #juego .meter-label {
+    margin: 3px 0;
+    font-size: 7px;
+  }
+  #juego #weapon-label {
+    margin-top: 4px;
+    font-size: 6px;
+  }
+  #juego .abilities {
+    grid-template-rows: repeat(5, minmax(40px, 1fr));
+    gap: 4px;
+    min-height: 0;
+    flex: 1;
+    max-height: 310px;
+  }
+  #juego .ability {
+    padding: 4px 6px;
+    grid-template-columns: 26px minmax(0, 1fr) 27px;
+    gap: 2px 5px;
+  }
+  #juego .ability .ability-ring {
+    width: 25px;
+    height: 25px;
+  }
+  #juego .ability-ring svg {
+    width: 17px;
+    height: 17px;
+  }
+  #juego .ability-copy b {
+    font-size: 11px;
+  }
+  #juego .ability-copy strong {
+    font-size: 8px;
+    margin-top: 1px;
+  }
+  #juego .ability-duration > span:first-child {
+    font-size: 5px;
+    min-width: 65px;
+  }
+}
+@media (max-height: 480px) and (min-width: 761px) {
+  .app:has(#juego.active) {
+    grid-template-rows: 28px minmax(0, 1fr);
+  }
+  #juego {
+    grid-template-rows: 26px minmax(0, 1fr) 16px;
+    gap: 3px 8px;
+    width: min(100%, calc((100dvh - 82px) * 1.6 + 158px));
+  }
+  #juego .vitals {
+    padding: 4px 6px;
+  }
+  #juego .vitals-name b {
+    font-size: 11px;
+  }
+  #juego .vitals-name > span {
+    font-size: 6px;
+  }
+  #juego #weapon-label {
+    display: none;
+  }
+  #juego .abilities {
+    grid-template-rows: repeat(5, minmax(36px, 1fr));
+  }
+  #juego .ability {
+    grid-template-rows: 1fr 9px;
+  }
+  #juego .ability-duration > span:first-child {
+    font-size: 5px;
+  }
+  #juego .match-clock span,
+  #juego .match-bar .eyebrow {
+    display: none;
+  }
+  #juego .combat-help .mouse-help,
+  #juego #game-message {
+    display: none;
+  }
+}
+/* Pantallas estrechas: barra inferior de 62px, con cinco habilidades iguales. */
+@media (max-width: 760px) {
+  .app:has(#juego.active) {
+    padding: 0 6px;
+  }
+  .app:has(#juego.active) .connection,
+  .app:has(#juego.active) .brand-mark {
+    display: none;
+  }
+  .app:has(#juego.active) .brand {
+    font-size: 12px;
+  }
+  .app:has(#juego.active) .top-actions {
+    gap: 9px;
+  }
+  .app:has(#juego.active) #fullscreen {
+    display: block;
+    font-size: 7px;
+  }
+  .app:has(#juego.active) .topbar .quiet {
+    font-size: 7px;
+  }
+  #juego {
+    width: 100%;
+    grid-template-columns: 1fr;
+    grid-template-rows: 30px minmax(0, 1fr) 98px 18px;
+    gap: 4px;
+  }
+  #juego .match-bar,
+  #juego .arena-stage {
+    grid-column: 1;
+  }
+  #juego .match-bar .eyebrow,
+  #juego .match-clock span,
+  #juego #net-stats {
+    display: none;
+  }
+  #juego .match-bar b {
+    font-size: 11px;
+  }
+  #juego .match-actions {
+    gap: 8px;
+  }
+  #juego .combat-hud {
+    grid-column: 1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 28px 64px;
+    gap: 5px;
+  }
+  #juego .vitals {
+    display: grid;
+    grid-template-columns: 65px 32px minmax(20px, 1fr) 33px minmax(20px, 0.6fr);
+    align-items: center;
+    gap: 5px;
+    padding: 3px 6px;
+  }
+  #juego .vitals-name {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: start;
+  }
+  #juego .vitals-name b {
+    font-size: 10px;
+  }
+  #juego .vitals-name > span {
+    font-size: 6px;
+  }
+  #juego .meter-label {
+    display: block;
+    margin: 0;
+    font-size: 6px;
+  }
+  #juego .meter-label strong {
+    font-size: 6px;
+  }
+  #juego .meter-label span {
+    display: none;
+  }
+  #juego #weapon-label {
+    display: none;
+  }
+  #juego .abilities {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-rows: 64px;
+    gap: 4px;
+  }
+  #juego .ability {
+    padding: 4px;
+    grid-template-columns: 25px 1fr;
+    grid-template-rows: 26px 14px 8px;
+    gap: 1px 3px;
+  }
+  #juego .ability .ability-ring {
+    width: 24px;
+    height: 24px;
+  }
+  #juego .ability-ring svg {
+    width: 16px;
+    height: 16px;
+  }
+  #juego .ability-key {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 8px;
+    padding: 2px 3px;
+  }
+  #juego .ability-copy {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 2px;
+  }
+  #juego .ability-copy b {
+    font-size: 9px;
+  }
+  #juego .ability-copy strong {
+    font-size: 7px;
+    margin: 0;
+  }
+  #juego .ability-duration {
+    grid-row: 3;
+  }
+  #juego .ability-duration > span:first-child {
+    display: none;
+  }
+  #juego .combat-help {
+    grid-column: 1;
+    grid-row: 4;
+  }
+  #juego #game-message,
+  #juego .combat-help .mouse-help {
+    display: none;
+  }
+}

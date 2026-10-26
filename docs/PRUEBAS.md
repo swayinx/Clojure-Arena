@@ -6,10 +6,10 @@ Fecha: 26 de octubre de 2026. Las pruebas automáticas se ejecutaron contra el c
 
 | Comprobación | Resultado | Cómo repetir |
 |---|---|---|
-| Compilación oficial ClojureScript, optimización avanzada | Correcta, bundle de aproximadamente 269 KB sin comprimir | `bb build` |
+| Compilación oficial ClojureScript, optimización avanzada | Correcta, bundle de aproximadamente 281 KB sin comprimir | `bb build` |
 | Sintaxis del bundle | Sin error | `node --check public/client.js` |
-| Cliente compilado con DOM/Canvas simulados | 10 comprobaciones: arranque, vida, escudo, dash, ulti, dibujo, reinicio y QR; sin excepciones | `bb test-client` |
-| Reglas y frontera de red | 10 pruebas, 48 aserciones, 0 fallos | `bb test` |
+| Cliente compilado con DOM/Canvas simulados | Arranque, poderes, ulti, QR, pantalla completa, carga de 12 muestras, volumen y silencio; sin excepciones | `bb test-client` |
+| Reglas y frontera de red | 10 pruebas, 50 aserciones, 0 fallos | `bb test` |
 | 20 clientes WebSocket, 5 salas de 4 | 15 comprobaciones correctas | `bb test-network`, con `bb serve` vacío en otra terminal |
 | Estados idénticos por tick | Confirmado para los 4 miembros de cada una de las 5 salas | Prueba de integración |
 | Límite de salas/plazas | Sexta sala y quinto jugador rechazados | Prueba de integración |
@@ -20,7 +20,9 @@ Fecha: 26 de octubre de 2026. Las pruebas automáticas se ejecutaron contra el c
 | Upgrade WebSocket con Origin HTTPS | Respuesta HTTP 101 | Prueba del túnel |
 | Dos clientes por WSS a través del túnel | Partida iniciada y habilidad sincronizada | Variante Internet de `network_test.cljs` |
 | Salas LAN desde Internet | No se listan, no admiten unión ni creación por túnel | 6 comprobaciones de Internet correctas |
-| HTML/recursos | Etiquetas balanceadas, 71 IDs únicos, referencias DOM válidas, cuatro SVG válidos | Comprobación estática |
+| Audio OGG | 12 archivos decodificados con FFmpeg sin errores; HTTP entrega los bytes originales con `audio/ogg` | Archivos en `public/audio/` |
+| Procedencia de audio | Bytes idénticos a los ZIP descargados de Kenney; licencias incluidas | `docs/RECURSOS.md` |
+| HTML/recursos | Etiquetas balanceadas, 72 IDs únicos, referencias DOM válidas, cuatro SVG válidos | Comprobación estática |
 
 El túnel de prueba es temporal. Su URL no forma parte de la configuración permanente ni debe incluirse en el QR de la exposición. Crea uno nuevo al realizar la demostración.
 
@@ -80,10 +82,10 @@ La herramienta de navegador rechazó `http://localhost:8080` por una configuraci
 
 Por ello, **no se afirma haber revisado capturas de esta versión ni verificado visualmente todos los tamaños**. Las siguientes comprobaciones deben completarse en un navegador autorizado:
 
-1. Abrir `http://localhost:8080` a 1366×768, 1920×1080, 1280×600 y una ventana baja de 844×390. Revisar inicio, cinco salas, espera de cuatro jugadores, combate, marcador y diálogos. No debe aparecer desplazamiento ni quedar cortado un botón.
+1. Recargar `http://localhost:8080` tras la mejora del HUD lateral y abrir a 1366×768, 1920×1080, 1280×600 y una ventana baja de 844×390. Revisar inicio, cinco salas, espera de cuatro jugadores, combate, marcador y diálogos. No debe aparecer desplazamiento ni quedar cortado un botón.
 2. Entrenar y mover con WASD. Apuntar, mantener clic, usar Shift. El personaje conserva velocidad al cambiar el tamaño de la ventana.
 3. Activar Q: observar **duración activa** y **recarga** simultáneas. Recibir un golpe y ver bajar escudo antes que vida. Usar E cuando falte vida.
-4. Activar R y F. Ver la diferencia entre disparo normal/potenciado, aviso de nova y explosión. Reducir y apagar cámara/partículas en Ajustes; verificar silencio al desactivar sonido.
+4. Activar pantalla completa y volver con Esc. Verificar que el mapa crece sin deformarse. Activar R y F. Ver la diferencia entre disparo normal/potenciado, aviso de nova y explosión. Reducir y apagar cámara/partículas en Ajustes; verificar volumen y silencio, también mientras una muestra está sonando.
 5. Copiar invitación en HTTP LAN y HTTPS. Escanear el QR y comprobar que no contiene `localhost` cuando se comparte desde la PC anfitriona.
 6. Abrir cuatro navegadores/PCs. Confirmar movimiento visible, impactos, bajas, reaparición, cierre de ronda y revancha. Desconectar un cliente y luego el anfitrión.
 7. Medir FPS en Brave y, si interesa compararlo, en la vista previa de AI Studio. Las pruebas del servidor no sustituyen una medición de render.
@@ -91,3 +93,9 @@ Por ello, **no se afirma haber revisado capturas de esta versión ni verificado 
 ## Límites de la evidencia
 
 Veinte sockets en una PC prueban concurrencia, límites y consistencia. No equivalen a veinte personas con latencias, GPU y Wi-Fi diferentes. La prueba pública sí recorrió Cloudflare, pero no reemplaza ensayar en la red concreta del salón.
+
+### Revisión solicitada a partir de la captura
+
+Se inspeccionó la captura aportada por el usuario: la arena dejaba franjas laterales amplias y el HUD consumía una fila alta. La nueva distribución usa la altura para el mapa y coloca los indicadores en una columna lateral compacta. El cambio se verificó en código y en las pruebas de ejecución simulada; sigue pendiente una captura de esta versión en el navegador autorizado. La prueba del sonido comprueba archivos, carga y mezcla, no una escucha subjetiva.
+
+La prueba WSS por un túnel real se repitió después de incorporar el audio y pasó sus seis comprobaciones. Las 50 aserciones del motor/protocolo también pasaron. El motor y las reglas no cambiaron en esta revisión.

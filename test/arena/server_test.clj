@@ -12,5 +12,7 @@
 (deftest static-root-only
   (is (= 404 (:status (s/static-file "/../README.md"))))
   (is (= 200 (:status (s/static-file "/index.html"))))
+  (is (= 200 (:status (s/static-file "/audio/phaseJump1.ogg"))))
+  (is (= "audio/ogg" (get-in (s/static-file "/audio/phaseJump1.ogg") [:headers "Content-Type"])))
   (is (= 403 (:status (s/handler {:request-method :get :uri "/ws" :websocket? true
                                  :headers {"host" "localhost:8080" "origin" "https://example.com"}})))))
