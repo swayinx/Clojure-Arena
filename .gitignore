@@ -1,0 +1,12 @@
+node_modules/
+build/
+.DS_Store
+.tools/
+.cpcache/
+.clj-kondo/
+.lsp/
+dist/
+handoff/*.zip
+output/
+.arena-public-url
+*.log

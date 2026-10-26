@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101514">
+  <title>Clojure Arena</title>
+  <meta name="description" content="Arena de combate táctico individual en ClojureScript con cuatro personajes, dash, escudo, curación, daño aumentado y blancos regenerables.">
+  <meta property="og:title" content="Clojure Arena">
+  <meta property="og:description" content="Arena de combate táctico individual en ClojureScript con cuatro personajes, dash, escudo, curación, daño aumentado y blancos regenerables.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="client.js"></script>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">CA</span><span>CLOJURE <b>ARENA</b><small>PRUEBA LOCAL DE COMBATE</small></span></div>
+    <span class="build-label">PROTOTIPO JUGABLE PARA UNA PERSONA</span>
+  </header>
+  <main>
+    <section id="inicio" class="screen active">
+      <div class="intro">
+        <span class="eyebrow">SALA DE ENTRENAMIENTO</span>
+        <h1>ENTRA A LA <em>ARENA</em></h1>
+        <p>Prueba el movimiento fluido, el impulso evasivo (Dash), la puntería, los disparos y los poderes tácticos. Los blancos responden al fuego y se regeneran tras ser destruidos.</p>
+      </div>
+      <div class="setup-grid">
+        <div class="character-panel">
+          <div class="panel-title"><span>ELIGE TU PERSONAJE</span><small>Todos cuentan con las mismas habilidades</small></div>
+          <div class="fighter-cards">
+            <button class="fighter-card active" data-fighter="brasa"><span class="sprite brasa"></span><b>BRASA</b><small>Traje carmesí</small></button>
+            <button class="fighter-card" data-fighter="chispa"><span class="sprite chispa"></span><b>CHISPA</b><small>Traje turquesa</small></button>
+            <button class="fighter-card" data-fighter="mora"><span class="sprite mora"></span><b>MORA</b><small>Traje violeta</small></button>
+            <button class="fighter-card" data-fighter="bastion"><span class="sprite bastion"></span><b>BASTIÓN</b><small>Traje ámbar</small></button>
+          </div>
+        </div>
+        <aside class="start-panel">
+          <span class="eyebrow">CONTROLES</span>
+          <div class="control-row"><kbd>W A S D</kbd><span>Moverse (diagonal normalizada)</span></div>
+          <div class="control-row"><kbd>RATÓN</kbd><span>Apuntar</span></div>
+          <div class="control-row"><kbd>CLIC IZQ</kbd><span>Mantener para disparar</span></div>
+          <div class="control-row"><kbd>SHIFT</kbd><span>Dash e inmunidad breve (2,5 s)</span></div>
+          <div class="control-row"><kbd>Q</kbd><span>Escudo 60 pts / 5 s (10 s)</span></div>
+          <div class="control-row"><kbd>E</kbd><span>Curación +35 vida (12 s)</span></div>
+          <div class="control-row"><kbd>R</kbd><span>Daño aumentado / 6 s (13 s)</span></div>
+          <button id="start-game" class="primary-button">CREAR SALA DE PRUEBA</button>
+          <small>Esta prueba funciona sin Internet y sin servidor.</small>
+        </aside>
+      </div>
+    </section>
+    <section id="juego" class="screen">
+      <div class="game-heading">
+        <div><span class="eyebrow">SALA LOCAL · UNA PERSONA</span><h2>ARENA DE PRUEBA</h2></div>
+        <button id="leave-game" class="secondary-button">VOLVER AL INICIO</button>
+      </div>
+      <div class="game-grid">
+        <div class="arena-wrap">
+          <canvas id="arena" width="960" height="600" tabindex="0" aria-label="Arena de entrenamiento"></canvas>
+          <div class="arena-note">WASD MOVER · SHIFT DASH (INMUNE 0,18 S) · RATÓN APUNTAR · CLIC DISPARAR · Q ESCUDO · E CURAR · R DAÑO EXTRA</div>
+        </div>
+        <aside class="hud">
+          <span class="eyebrow">TU PERSONAJE</span><h3 id="hud-name">BRASA</h3>
+          <div class="meter-label"><span>VIDA</span><strong id="health-text">100 / 100</strong></div><div class="meter"><span id="health-bar"></span></div>
+          <div class="meter-label"><span>ESCUDO</span><strong id="shield-text">0 / 60</strong></div><div class="meter shield"><span id="shield-bar"></span></div>
+          <div class="score"><span>BLANCOS DESTRUIDOS</span><strong id="score">0</strong></div>
+          <div class="power-heading">HABILIDADES Y PODERES</div>
+          <div class="power-row" id="power-dash"><kbd>SHIFT</kbd><span><b>DASH EVASIVO</b><small>Impulso e inmunidad (0,18 s)</small></span><strong id="dash-cooldown">LISTO</strong></div>
+          <div class="power-row" id="power-shield"><kbd>Q</kbd><span><b>ESCUDO</b><small>Absorbe 60 de daño por 5 s</small></span><strong id="shield-cooldown">LISTO</strong></div>
+          <div class="power-row" id="power-heal"><kbd>E</kbd><span><b>CURACIÓN</b><small>Recupera 35 de vida</small></span><strong id="heal-cooldown">LISTO</strong></div>
+          <div class="power-row" id="power-boost"><kbd>R</kbd><span><b>DAÑO EXTRA</b><small>Disparos potenciados por 6 s</small></span><strong id="boost-cooldown">LISTO</strong></div>
+          <p id="game-message" class="game-message" role="status">Acércate a los blancos y dispara.</p>
+          <button id="restart-game" class="secondary-button restart">REINICIAR PRUEBA</button>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <footer>CLOJURE ARENA · PRUEBA INDIVIDUAL EN CLOJURESCRIPT · MULTIJUGADOR PENDIENTE</footer>
+</div>
+</body>
+</html>
