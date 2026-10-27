@@ -418,6 +418,13 @@ main {
   font-size: 12px;
   margin-top: 5px;
 }
+.map-choice {
+  min-width: 160px;
+  color: #c8dacd;
+}
+.training-entry .map-choice select {
+  width: 100%;
+}
 .primary,
 .secondary {
   padding: 12px 17px;
@@ -989,10 +996,23 @@ main {
   background: linear-gradient(130deg, #342c42, #1d2831);
 }
 .ability.ult.ready {
-  box-shadow: inset 0 0 22px #b993ff18;
+  border-color: #e4c8ff;
+  background: linear-gradient(130deg, #54356c, #302c55);
+  box-shadow: inset 0 0 22px #d6aaff48, 0 0 20px #ad6cf665;
+  animation: nova-ready 1.2s ease-in-out infinite alternate;
 }
 .ability.ult.ready .ability-ring {
-  box-shadow: 0 0 17px #c7a0ff40;
+  color: #fff0ff;
+  box-shadow: 0 0 17px #ebc8ffad;
+}
+.ability.ult.ready .ability-copy strong,
+.ability.ult.ready .ability-key {
+  color: #fff1ff;
+  text-shadow: 0 0 10px #dab1ff;
+}
+@keyframes nova-ready {
+  from { box-shadow: inset 0 0 14px #d6aaff32, 0 0 10px #ad6cf64a; }
+  to { box-shadow: inset 0 0 25px #e5bcff6d, 0 0 26px #bc85ffba; }
 }
 .ability:hover {
   background: #293a3e;

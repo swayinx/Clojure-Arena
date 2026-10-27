@@ -33,7 +33,7 @@
 (defn room-view [room]
   (let [w (:world @(:agent room))]
     {:code (:code room) :name (:name room) :visibility (:visibility room)
-     :count (count (:ids room)) :capacity 4 :phase (:phase w)}))
+     :count (count (:ids room)) :capacity 4 :phase (:phase w) :arena (:arena w)}))
 (defn visible? [client room]
   (or (= :lan (:scope client)) (= :internet (:visibility room))))
 (defn room-list [s client]
@@ -152,7 +152,7 @@
                   (let [s (detach s id) code (new-code s) t (now)
                         title (clean-name (:room-name m) "Arena abierta")
                         a (watch-errors! (agent {:code code :name title :visibility visibility :host id
-                                                 :members {} :inputs {} :world (e/world :arena t)
+                                                 :members {} :inputs {} :world (e/world :arena t (:arena m))
                                                  :last-tick t :last-publish 0}))
                         room {:code code :name title :visibility visibility :host id :ids #{} :agent a}]
                     (attach (assoc-in s [:rooms code] room) id code m)))))

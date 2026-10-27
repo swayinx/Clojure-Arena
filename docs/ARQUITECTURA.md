@@ -154,3 +154,7 @@ No se emplean P2P/WebRTC, rollback de combate, compensación de lag del servidor
 `presentation.cljc` recibe mapas inmutables y devuelve copias destinadas exclusivamente al dibujo. `remember` guarda hasta ocho instantáneas y `sample` interpola su posición con un cursor aproximadamente 100 ms atrasado. `sample` conserva recursos y membresía del mundo más reciente: no puede restaurar jugadores desconectados, muertos o balas retiradas por un impacto. `engine.cljc` añade el origen del disparo a sus datos de presentación sin cambiar su colisión.
 
 El jugador local usa predicción y una fracción visual del siguiente paso. Los efectos tienen reloj local; la estimación visual de tiempos de habilidades suaviza correcciones pequeñas. Ninguno de estos valores se escribe en el estado autoritativo ni se envía como resultado al servidor. En entrenamiento, el navegador sí ejecuta el motor completo, porque no hay una partida compartida.
+
+## Selección de escenario
+
+`engine/arenas` es un mapa inmutable de tres diseños con `:obstacles`, `:spawns` y `:drops`. `engine/world` valida el identificador y lo guarda en `:arena`; `start-round` lo conserva. El servidor recibe `:arena` solo al crear una sala, publica la elección en la lista de salas y snapshots y usa `blocked?` para movimiento y trayectoria de balas. El cliente dibuja ese mismo conjunto de rectángulos y cambia la caché estática de Canvas al cambiar de mapa. Los atlas de terceros se usan solo para presentación: nunca deciden colisiones ni daño.

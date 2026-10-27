@@ -36,13 +36,29 @@
                 {:x 594 :y 390 :w 74 :h 46}])
 (def spawn-points [[132 112] [828 488] [828 112] [132 488]])
 (def drop-points [[480 300] [480 122] [480 478] [162 300] [798 300]])
+(def arenas
+  {:patio {:name "Patio Cero" :obstacles obstacles :spawns spawn-points :drops drop-points}
+   :lab {:name "Laboratorio Azul"
+         :obstacles [{:x 202 :y 224 :w 110 :h 34} {:x 648 :y 224 :w 110 :h 34}
+                     {:x 202 :y 342 :w 110 :h 34} {:x 648 :y 342 :w 110 :h 34}
+                     {:x 430 :y 170 :w 100 :h 36} {:x 430 :y 394 :w 100 :h 36}]
+         :spawns spawn-points :drops drop-points}
+   :desierto {:name "Puesto del Desierto"
+              :obstacles [{:x 244 :y 156 :w 72 :h 52} {:x 644 :y 156 :w 72 :h 52}
+                          {:x 244 :y 392 :w 72 :h 52} {:x 644 :y 392 :w 72 :h 52}
+                          {:x 388 :y 240 :w 44 :h 48} {:x 528 :y 240 :w 44 :h 48}
+                          {:x 388 :y 312 :w 44 :h 48} {:x 528 :y 312 :w 44 :h 48}]
+              :spawns spawn-points :drops drop-points}})
+(defn arena-id [id] (if (contains? arenas id) id :patio))
 (def drop-kinds [:rapid :heal :scatter :shield :energy])
 (def empty-input {:dx 0 :dy 0 :ax 480 :ay 300 :fire false :actions []})
 
-(defn blocked? [x y radius]
-  (some (fn [{ox :x oy :y w :w h :h}]
-          (< (distance x y (clamp x ox (+ ox w)) (clamp y oy (+ oy h))) radius))
-        obstacles))
+(defn blocked?
+  ([x y radius] (blocked? :patio x y radius))
+  ([arena x y radius]
+   (some (fn [{ox :x oy :y w :w h :h}]
+           (< (distance x y (clamp x ox (+ ox w)) (clamp y oy (+ oy h))) radius))
+         (get-in arenas [(arena-id arena) :obstacles]))))
 
 (defn move-player
   "Movimiento puro; usa deslizamiento por ejes para no atravesar la cobertura."
@@ -52,28 +68,33 @@
         dir (if dashing? (:dash-dir p) moving)
         speed (if dashing? 900 280)
         nx (clamp (+ (:x p) (* speed dt (:dx dir))) 42 918)
-        x (if (blocked? nx (:y p) 16) (:x p) nx)
+        x (if (blocked? (:arena p) nx (:y p) 16) (:x p) nx)
         ny (clamp (+ (:y p) (* speed dt (:dy dir))) 42 558)
-        y (if (blocked? x ny 16) (:y p) ny)
+        y (if (blocked? (:arena p) x ny 16) (:y p) ny)
         walking? (or (not (zero? (:dx moving))) (not (zero? (:dy moving))))]
     (cond-> (assoc p :x x :y y :angle (atan2 (- (:ay input 300) y) (- (:ax input 480) x))
                      :moving (or dashing? walking?))
       walking? (assoc :last-dir moving))))
 
-(defn player [id name skin slot now]
-  (let [[x y] (nth spawn-points (mod slot 4))]
-    {:id id :name name :skin skin :slot slot :x x :y y :hp 100 :shield 0
+(defn player
+  ([id name skin slot now] (player id name skin slot now :patio))
+  ([id name skin slot now arena]
+  (let [arena (arena-id arena)
+        [x y] (nth (get-in arenas [arena :spawns]) (mod slot 4))]
+    {:id id :name name :skin skin :slot slot :arena arena :x x :y y :hp 100 :shield 0
      :angle 0 :moving false :alive true :kills 0 :deaths 0 :damage 0
      :shield-until 0 :boost-until 0 :heal-until 0 :dash-until 0
      :dash-dir {:dx 1 :dy 0} :last-dir {:dx 1 :dy 0}
      :hurt-until 0 :shield-hit-until 0 :muzzle-until 0 :last-shot -1000
      :spawn-until (+ now 1200) :respawn-at 0 :ulti 20 :ult-at 0 :ult-target nil
-     :weapon :pulse :weapon-until 0 :cooldowns {:dash 0 :shield 0 :heal 0 :boost 0}}))
+     :weapon :pulse :weapon-until 0 :cooldowns {:dash 0 :shield 0 :heal 0 :boost 0}})))
 
-(defn world [mode now]
-  {:mode mode :phase :waiting :time now :tick 0 :players (sorted-map)
+(defn world
+  ([mode now] (world mode now :patio))
+  ([mode now arena]
+  {:mode mode :arena (arena-id arena) :phase :waiting :time now :tick 0 :players (sorted-map)
    :shots [] :pickups [] :events [] :event-seq 0 :shot-seq 0
-   :next-drop (+ now 8000) :drop-index 0 :round-end (+ now round-ms) :winner nil})
+   :next-drop (+ now 8000) :drop-index 0 :round-end (+ now round-ms) :winner nil}))
 
 (defn add-event [w kind data]
   (let [n (inc (:event-seq w))]
@@ -84,7 +105,7 @@
   (if (or (>= (count (:players w)) max-players) (contains? (:players w) id)) w
       (let [occupied (set (map :slot (vals (:players w))))
             slot (first (remove occupied (range 4)))]
-        (assoc-in w [:players id] (player id name skin slot (:time w))))))
+        (assoc-in w [:players id] (player id name skin slot (:time w) (:arena w))))))
 
 (defn remove-player [w id]
   (-> w (update :players dissoc id)
@@ -92,16 +113,18 @@
 
 (defn start-round [w now]
   (let [fresh (reduce (fn [m [id p]]
-                        (assoc m id (merge (player id (:name p) (:skin p) (:slot p) now)
+                        (assoc m id (merge (player id (:name p) (:skin p) (:slot p) now (:arena w))
                                           (select-keys p [:bot?]))))
                       (sorted-map) (:players w))]
-    (-> (world (:mode w) now)
+    (-> (world (:mode w) now (:arena w))
         (assoc :players fresh :phase :playing :round-end (+ now round-ms)
                :event-seq (:event-seq w))
         (add-event :round-start {}))))
 
-(defn training [name skin now]
-  (let [w (-> (world :training now)
+(defn training
+  ([name skin now] (training name skin now :patio))
+  ([name skin now arena]
+  (let [w (-> (world :training now arena)
               (add-player "you" name skin)
               (add-player "bot-1" "SENTINELA 01" "chispa")
               (add-player "bot-2" "SENTINELA 02" "mora")
@@ -110,7 +133,7 @@
     (-> (reduce (fn [s id] (assoc-in s [:players id :bot?] true)) w ["bot-1" "bot-2" "bot-3"])
         (assoc-in [:players "you" :x] 480)
         (assoc-in [:players "you" :y] 320)
-        (assoc-in [:players "you" :ulti] 100))))
+        (assoc-in [:players "you" :ulti] 100)))))
 
 (defn charge [w id amount]
   (if (get-in w [:players id])
@@ -223,7 +246,8 @@
                                                 (< (segment-distance (:x s) (:y s) x y (:x p) (:y p)) 19)))
                                    (vals (:players w)))))
         ;; At 40 Hz a projectile moves <=19 px; midpoint protects narrow edges.
-        wall? (or (blocked? x y 4) (blocked? (/ (+ (:x s) x) 2) (/ (+ (:y s) y) 2) 4))]
+        wall? (or (blocked? (:arena w) x y 4)
+                  (blocked? (:arena w) (/ (+ (:x s) x) 2) (/ (+ (:y s) y) 2) 4))]
     (cond
       (or (> (:time w) (:until s)) (< x 24) (> x 936) (< y 24) (> y 576) wall?)
       (if (> (:until s) (:time w)) (add-event w :wall {:x (clamp x 24 936) :y (clamp y 24 576)}) w)
@@ -243,7 +267,7 @@
 (defn lifecycle [w id dt]
   (let [p (get-in w [:players id]) now (:time w)]
     (if (and (not (:alive p)) (>= now (:respawn-at p)))
-      (let [fresh (player id (:name p) (:skin p) (:slot p) now)]
+      (let [fresh (player id (:name p) (:skin p) (:slot p) now (:arena w))]
         (-> w (assoc-in [:players id] (merge fresh (select-keys p [:kills :deaths :damage :bot?])
                                             {:ulti (* 0.65 (:ulti p))}))
             (add-event :spawn {:player id :x (:x fresh) :y (:y fresh)})))
@@ -254,7 +278,8 @@
 
 (defn drop-item [w]
   (if (< (:time w) (:next-drop w)) w
-      (let [i (:drop-index w) [x y] (nth drop-points (mod i 5))
+      (let [i (:drop-index w) points (get-in arenas [(:arena w) :drops])
+            [x y] (nth points (mod i (count points)))
             kind (nth drop-kinds (mod i 5))]
         (-> w (update :drop-index inc) (assoc :next-drop (+ (:time w) 9000))
             (update :pickups conj {:id i :kind kind :x x :y y :land-at (+ (:time w) 1000)

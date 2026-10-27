@@ -35,6 +35,7 @@
 (defn resume-audio! []
   (audio/resume! (:sound @settings) (:volume @settings)))
 (defn sound! [kind] (audio/play! kind (:sound @settings)))
+(defn ultimate-ready! [] (sound! :ult-ready))
 (defn reset!fx [] (reset! poses {}) (reset! effects {:particles [] :rings [] :texts [] :ghosts [] :last-event 0 :shake 0 :hit-at -1000 :kill-at -1000}))
 (defn particle-burst [x y n speed color now angle spread]
   (let [count (if (or (reduced-motion?) (= :low (:particles @settings))) (max 2 (quot n 3)) n)]
@@ -98,7 +99,13 @@
                  (update :ghost-times #(reduce (fn [m g] (assoc m (:id g) now)) % ghosts)))))))
 
 (def floor-cache (atom nil))
-(defn paint-floor! []
+(def map-art
+  (into {} (for [[id file] [[:lab "lab-tileset.png"] [:desierto "desert-tilemap.png"]]]
+             (let [im (js/Image.)]
+               (set! (.-onload im) #(reset! floor-cache nil))
+               (set! (.-src im) (str "art/" file))
+               [id im]))))
+(defn paint-patio! []
   (rect -12 -12 984 624 "#0c171d")
   (polygon [[40 15] [920 15] [945 40] [945 560] [920 585] [40 585] [15 560] [15 40]] "#34484a")
   (polygon [[42 25] [918 25] [935 42] [935 558] [918 575] [42 575] [25 558] [25 42]] "#1c2d32")
@@ -131,6 +138,14 @@
   (ring 480 300 102 "#a6cebc15" 2) (ring 480 300 95 "#a6cebc0c" 1)
   (polygon [[480 276] [504 300] [480 324] [456 300]] "#d5f5cd0a")
   (label "PATIO" 480 260 "#a7d4c620" 18) (label "CERO" 480 354 "#a7d4c620" 18)
+  (doseq [x [112 848] y [84 516]]
+    (ring x y 18 "#9dd1bb25" 1)
+    (line (- x 12) y (+ x 12) y "#bde5c930" 1)
+    (line x (- y 12) x (+ y 12) "#bde5c930" 1))
+  (doseq [y [160 438]]
+    (line 367 y 593 y "#bce2c91a" 2)
+    (doseq [x (range 385 580 32)]
+      (rect x (- y 2) 12 4 "#d3c78236")))
   (doseq [[x y] e/spawn-points]
     (ring x y 37 "#9cc8b41a" 2)
     (doseq [i (range 4)] (let [a (* i (/ e/pi 2))]
@@ -140,38 +155,83 @@
     (rect (- x 1) (- y 3) (+ w 2) (+ h 6) "#caf49308") (rect x y w h "#9cba72"))
   (doseq [[x y] [[20 110] [20 430] [937 110] [937 430]]]
     (rect x y 3 60 "#669ca0"))
-  (doseq [{:keys [x y w h]} e/obstacles]
+  (doseq [{:keys [x y w h]} (get-in e/arenas [:patio :obstacles])]
     (rect (+ x 4) (+ y 8) w h "#0b171e80")
     (rect x y w h "#415255") (rect (+ x 3) (+ y 3) (- w 6) (- h 8) "#2c3d43")
     (rect x y w 3 "#657c79") (rect x (+ y h -5) w 5 "#17262c")
     (line (+ x 10) (+ y 12) (+ x w -10) (+ y 12) "#57706b" 2)
     (line (+ x 10) (+ y 18) (+ x w -10) (+ y 18) "#3c5354" 1)
+    (rect (+ x 7) (+ y 6) (- w 14) 3 "#90c9b766")
+    (doseq [yy (range (+ y 25) (+ y h -11) 7)]
+      (line (+ x 9) yy (+ x w -9) yy "#8bb5ac24" 1))
     (doseq [offset [0 13 26 39]]
       (polygon [[(+ x 8 offset) (+ y h -12)] [(+ x 14 offset) (+ y h -12)]
                 [(+ x 21 offset) (+ y h -5)] [(+ x 15 offset) (+ y h -5)]] "#d3b86b80"))
     (rect (+ x 7) (+ y 6) 4 3 "#c8e299") (rect (+ x w -11) (+ y 6) 4 3 "#c8e299")))
-(defn cache-floor! []
-  (when-not @floor-cache
-    (paint-floor!)
+
+(defn paint-variant! [arena]
+  (let [lab? (= arena :lab)
+        base (if lab? "#102536" "#4a302c")
+        border (if lab? "#69a8c7" "#e4b275")
+        seam (if lab? "#93c9da27" "#f7cd9129")
+        im (get map-art arena)
+        image? (and im (.-complete im) (pos? (.-naturalWidth im)))
+        [sx sy size] (if lab? [0 128 32] [0 51 16])]
+    (rect 0 0 960 600 (if lab? "#081522" "#271c22"))
+    (rect 24 24 912 552 (if lab? "#2b5268" "#986a56"))
+    (rect 40 40 880 520 base)
+    ;; El atlas original se repite en la caché estática; el motor define las colisiones.
+    (when image?
+      (doseq [x (range 40 920 32) y (range 40 560 32)]
+        (.drawImage ctx im sx sy size size x y 32 32)))
+    (rect 40 40 880 520 (if lab? "#0a223088" "#613e3050"))
+    (doseq [x (range 40 921 32)] (line x 40 x 560 seam 1))
+    (doseq [y (range 40 561 32)] (line 40 y 920 y seam 1))
+    (doseq [[x y] (get-in e/arenas [arena :spawns])]
+      (ring x y 32 (str border "66") 2)
+      (doseq [i (range 4)]
+        (let [a (* i (/ e/pi 2))]
+          (line (+ x (* 25 (e/cos a))) (+ y (* 25 (e/sin a)))
+                (+ x (* 37 (e/cos a))) (+ y (* 37 (e/sin a))) border 2))))
+    (ring 480 300 77 (str border "32") 2)
+    (ring 480 300 61 (str border "22") 1)
+    (label (if lab? "LAB / 02" "DESIERTO / 03") 480 300 (str border "44") 15)
+    (doseq [{:keys [x y w h]} (get-in e/arenas [arena :obstacles])]
+      (rect (+ x 6) (+ y 8) w h "#08131ba0")
+      (rect x y w h (if lab? "#24465b" "#62443d"))
+      (rect (+ x 4) (+ y 4) (- w 8) (- h 8) (if lab? "#467089" "#bc8162"))
+      (when image?
+        (let [[cx cy cs] (if lab? [272 80 32] [0 170 16])]
+          (doseq [xx (range (+ x 6) (+ x w -16) 24)]
+            (.drawImage ctx im cx cy cs cs xx (+ y 6) 24 (- h 14)))))
+      (rect x y w 4 border)
+      (rect x (+ y h -5) w 5 (if lab? "#142b3d" "#48302a"))
+      (doseq [xx (range (+ x 10) (+ x w -8) 18)]
+        (line xx (+ y h -11) (+ xx 7) (+ y h -5) (str border "99") 2)))
+    (doseq [x [24 932] y [90 450]] (rect x y 4 50 border))))
+
+(defn cache-floor! [arena]
+  (when (not= arena (:arena @floor-cache))
+    (if (= arena :patio) (paint-patio!) (paint-variant! arena))
     (let [copy (.createElement js/document "canvas")]
       (set! (.-width copy) 960) (set! (.-height copy) 600)
       (.drawImage (.getContext copy "2d") canvas 0 0)
-      (reset! floor-cache copy))))
+      (reset! floor-cache {:arena arena :canvas copy}))))
 
-(defn draw-ambient! [now]
+(defn draw-ambient! [arena now]
   (let [animated? (and (not (reduced-motion?)) (= :full (:particles @settings)))
         pulse (if animated? (+ 0.45 (* 0.15 (e/sin (/ now 1500)))) 0.45)]
     (.save ctx) (set! (.-globalAlpha ctx) pulse)
-    (doseq [a [0 e/pi]]
+    (doseq [a [0 e/pi] :when (= arena :patio)]
       (arc 480 300 68 a (+ a 1.15) "#7dbcb0" 2))
-    (doseq [x [20 937] y [110 430]] (rect x y 3 60 "#8fcac8"))
+    (doseq [x [20 937] y [110 430] :when (= arena :patio)] (rect x y 3 60 "#8fcac8"))
     (.restore ctx)
     ;; Doce motas deterministas; sin añadir entidades al servidor.
     (when animated?
       (doseq [i (range 12)]
         (let [x (+ 58 (mod (+ (* i 137) (* now 0.003)) 844))
               y (+ 56 (mod (- (* i 83) (* now 0.006)) 488))]
-          (rect x y 1.5 1.5 "#b5d9c51c")))
+          (rect x y 1.5 1.5 (case arena :desierto "#ffd8a71e" :lab "#a8ddf522" "#b5d9c51c"))))
       (doseq [x [74 886] y [210 368]]
         (let [age (mod (+ now (* x 5)) 2800)]
           (.save ctx) (set! (.-globalAlpha ctx) (* 0.09 (e/sin (* e/pi (/ age 2800)))))
@@ -216,13 +276,22 @@
       ;; El borde fijo muestra el área real; las chispas convergen antes del impacto.
       (circle x y 125 (str color "12"))
       (ring x y 125 (str color "85") 2)
+      (ring x y 117 (str color "2d") 9)
       (arc x y 128 (- (/ e/pi 2)) (+ (- (/ e/pi 2)) (* 2 e/pi progress)) color 3)
       (ring x y inward (str color "70") 1.5)
-      (doseq [i (range 6)]
-        (let [a (+ spin (* i (/ e/pi 3)))
+      (doseq [i (range 12)]
+        (let [a (+ spin (* i (/ e/pi 6)))
               xx (+ x (* inward (e/cos a))) yy (+ y (* inward (e/sin a)))]
           (line (+ x (* 122 (e/cos a))) (+ y (* 122 (e/sin a))) xx yy (str color "30") 1)
-          (circle xx yy (+ 2 (* progress 2)) color)))
+          (circle xx yy (+ 2 (* progress 2)) color)
+          (line (+ x (* 123 (e/cos a))) (+ y (* 123 (e/sin a)))
+                (+ x (* 137 (e/cos a))) (+ y (* 137 (e/sin a))) color 2)))
+      (doseq [i (range 4)]
+        (let [a (+ spin (* i (/ e/pi 2)))]
+          (polygon [[(+ x (* 95 (e/cos a))) (+ y (* 95 (e/sin a)))]
+                    [(+ x (* 113 (e/cos (+ a 0.16)))) (+ y (* 113 (e/sin (+ a 0.16))))]
+                    [(+ x (* 113 (e/cos (- a 0.16)))) (+ y (* 113 (e/sin (- a 0.16))))]]
+                   (str color "aa"))))
       (.save ctx) (.translate ctx x y) (.rotate ctx spin)
       (let [r (+ 7 (* progress 12))]
         (polygon [[0 (- r)] [r 0] [0 r] [(- r) 0]] color)
@@ -242,11 +311,14 @@
     (circle x y radius (str color "28"))
     (ring x y radius color (max 1 (* 9 (- 1 progress))))
     (ring x y (* radius 0.79) "#f5eaff" (max 1 (* 4 (- 1 progress))))
+    (ring x y 125 (str color "66") 2)
     (doseq [i (range 12)]
       (let [a (+ spin (* i (/ e/pi 6)))
             inner (* radius (+ 0.58 (* 0.28 progress)))]
         (line (+ x (* inner (e/cos a))) (+ y (* inner (e/sin a)))
-              (+ x (* radius (e/cos a))) (+ y (* radius (e/sin a))) color 2)))
+              (+ x (* radius (e/cos a))) (+ y (* radius (e/sin a))) color 3)
+        (circle (+ x (* radius (e/cos a))) (+ y (* radius (e/sin a)))
+                (* 3 (- 1 progress)) "#fff5ff")))
     (when (pos? flash)
       (.save ctx) (set! (.-globalAlpha ctx) (* flash (if (reduced-motion?) 0.3 0.85)))
       (circle x y (+ 10 (* 28 flash)) "#fff5ff")
@@ -277,6 +349,7 @@
           boost? (< now (:boost-until p)) heal? (< now (:heal-until p))
           hurt? (< (- fx-now (get-in @effects [:cues (:id p) :hit] -1000)) 140)
           spawning? (< now (:spawn-until p))
+          ready-ult? (and (>= (:ulti p) 100) (not (pos? (:ult-at p))))
           pose (get @poses (:id p)) gait (:gait pose 0) walk (:walk pose 0)
           moving? (> walk 0.05)
           stride (if (reduced-motion?) 0 (* walk (e/sin gait)))
@@ -287,6 +360,16 @@
           recoil (if (< shot-age 180) (* 4 (visual/decay 22 (/ shot-age 1000))) 0)]
       (.save ctx) (.translate ctx x (+ y 20)) (.scale ctx 1 0.35) (circle 0 0 27 "#08151db0") (.restore ctx)
       (ring x (+ y 7) 24 (if mine? "#d9ed91b0" (str color "70")) (if mine? 2 1))
+      (when ready-ult?
+        (let [pulse (if (reduced-motion?) 0.5 (+ 0.5 (* 0.5 (e/sin (/ fx-now 230)))))
+              radius (+ 38 (* 4 pulse))]
+          (circle x y (+ radius 7) "#bd89ff12")
+          (ring x y radius (if mine? "#ead5ff" "#b89aff99") (+ 1.5 pulse))
+          (doseq [i (range 4)]
+            (let [a (+ (* i (/ e/pi 2)) (if (reduced-motion?) 0 (/ fx-now 900)))
+                  xx (+ x (* radius (e/cos a))) yy (+ y (* radius (e/sin a)))]
+              (polygon [[xx (- yy 5)] [(+ xx 5) yy] [xx (+ yy 5)] [(- xx 5) yy]] "#e5cbff")))
+          (when mine? (label "F · NOVA" x (- y 64) "#ead5ff" 9))))
       (when boost?
         (circle x y 31 "#ffbe6712")
         (doseq [i (range 4)]
@@ -381,14 +464,14 @@
   (advance-effects! dt fx-now world now)
   (set! (.-imageSmoothingEnabled ctx) false)
   ;; Crear fuera de la cámara; después solo un blit por fotograma.
-  (cache-floor!)
+  (cache-floor! (e/arena-id (:arena world)))
   (rect 0 0 960 600 "#102027")
   (.save ctx)
   (let [mag (if (reduced-motion?) 0 (* (:shake @effects) (:shake @settings)))]
     (.translate ctx (* mag 0.5 (+ (e/sin (* fx-now 0.045)) (e/sin (* fx-now 0.071))))
                     (* mag 0.5 (+ (e/cos (* fx-now 0.052)) (e/cos (* fx-now 0.083))))))
-  (.drawImage ctx @floor-cache 0 0)
-  (draw-ambient! fx-now)
+  (.drawImage ctx (:canvas @floor-cache) 0 0)
+  (draw-ambient! (:arena world) fx-now)
   (draw-pickups! world now) (draw-ultimates! world you now) (draw-ghosts! fx-now)
   (doseq [p (sort-by :y (vals (:players world)))] (draw-player! p you now fx-now))
   (draw-shots! world you) (draw-effects! fx-now)

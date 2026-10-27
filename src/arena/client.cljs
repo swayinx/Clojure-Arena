@@ -92,7 +92,7 @@
         (let [b (node "button" "room-entry" "") copy (node "span" "" "")
               full? (>= (:count room) 4) playing? (= (:phase room) :playing)]
           (.appendChild copy (node "b" "" (:name room)))
-          (.appendChild copy (node "small" "" (str (:code room) " · " (if (= :lan (:visibility room)) "WI-FI" "INTERNET") (when playing? " · EN JUEGO"))))
+          (.appendChild copy (node "small" "" (str (:code room) " · " (get-in e/arenas [(:arena room) :name] "Patio Cero") " · " (if (= :lan (:visibility room)) "WI-FI" "INTERNET") (when playing? " · EN JUEGO"))))
           (.appendChild b copy) (.appendChild b (node "span" "" (str (:count room) "/4")))
           (set! (.-disabled b) (or full? playing?))
           (.addEventListener b "click" #(join! (:code room))) (.appendChild container b))))))
@@ -115,10 +115,11 @@
                              (if online-room? "Acceso por Internet mientras el anfitrión esté encendido." "Solo equipos conectados a la misma red Wi-Fi."))))))
 (defn refresh-lobby! []
   (let [{:keys [world host you code visibility name]} @client
-        signature [(:players world) host code visibility]]
+        signature [(:players world) (:arena world) host code visibility]]
     (when (not= signature @room-render-key)
       (reset! room-render-key signature)
       (text! "lobby-title" (str/upper-case (or name "ARENA")))
+      (text! "lobby-map" (get-in e/arenas [(:arena world) :name] "Patio Cero"))
       (text! "room-mode" (if (= :internet visibility) "SALA DE INTERNET" "MISMA WI-FI"))
       (text! "lobby-code" code)
       (clear! (by-id "lobby-players"))
@@ -168,6 +169,7 @@
       (text! "weapon-label" (str (get-in e/weapons [(:weapon p) :name])
                                      (if (= :pulse (:weapon p)) " · CLIC PARA DISPARAR" (str " · " (seconds (- (:weapon-until p) now))))))
       (text! "match-time" (if training? "LIBRE" (match-clock (- (:round-end world) now))))
+      (text! "match-title" (str/upper-case (get-in e/arenas [(:arena world) :name] "Patio Cero")))
       (text! "match-mode" (if training? "ENTRENAMIENTO" (str "SALA " (:code @client))))
       (text! "match-goal" (if training? "PRUEBA TUS HABILIDADES" "12 BAJAS / 3 MIN"))
       (text! "net-stats" (if training? "LOCAL" (str (js/Math.round (:rtt @client)) " ms")))
@@ -187,7 +189,7 @@
               status (cond ulti? (if ready? "LISTA" (str (js/Math.floor (:ulti p)) "%"))
                            ready? "LISTO" :else (seconds cd))
               active-label (cond (pos? active-ms) (str (if ulti? "IMPACTO " "ACTIVO ") (seconds active-ms))
-                                 ulti? "CARGA AL COMBATIR"
+                                 ulti? (if ready? "PULSA F · NOVA LISTA" "CARGA AL COMBATIR")
                                  (and (= power :heal) (= 100 (:hp p))) "VIDA COMPLETA"
                                  ready? "DISPONIBLE" :else "RECARGANDO")]
           (css! card "--progress" (e/clamp progress 0 1))
@@ -231,12 +233,19 @@
 (defn begin-match! []
   (view/reset!fx) (reset! frame-stats {:since (perf) :frames 0 :fps 0}) (reset! announced-event 0) (reset! accumulator 0) (reset! score-render-key nil)
   (clear! (by-id "kill-feed")) (hidden! "scoreboard" true) (screen! "juego") (view/resume-audio!))
+(defn announce-ultimate! [old world you]
+  (when (and (get-in world [:players you :alive])
+             (< (get-in old [:players you :ulti] 0) 100)
+             (>= (get-in world [:players you :ulti] 0) 100))
+    (view/ultimate-ready!) (announce! "NOVA LISTA · PULSA F")))
+
 (defn start-training! []
   (when (= :online (:mode @client)) (send! {:type :leave}))
   (save-preferences!)
-  (let [world (e/training (:name (identity-message)) (:skin @client) 0)]
+  (let [world (e/training (:name (identity-message)) (:skin @client) 0
+                          (keyword (.-value (by-id "training-map"))))]
     (swap! client assoc :mode :training :world world :previous world :you "you" :code nil :pending [] :predicted nil :snapshots [] :render-time nil :display-time nil :correction {:x 0 :y 0})
-    (begin-match!) (update-hud! world 0) (announce! "ENTRENAMIENTO · NOVA LISTA EN F")))
+    (begin-match!) (update-hud! world 0) (view/ultimate-ready!) (announce! "ENTRENAMIENTO · NOVA LISTA EN F")))
 (defn clear-room! []
   (swap! client assoc :mode :none :world nil :previous nil :code nil :host nil :pending [] :predicted nil :snapshots [] :render-time nil :display-time nil :correction {:x 0 :y 0})
   (reset! room-render-key nil) (reset! score-render-key nil)
@@ -284,6 +293,7 @@
                :render-time (when-not starting? (:render-time s))
                :display-time (when-not starting? (:display-time s)) :correction correction)
         (when starting? (begin-match!))
+        (when (and (= :playing (:phase w)) (not starting?)) (announce-ultimate! old w (:you s)))
         (when (or (= :waiting (:phase w)) (= "sala" (:screen @client))) (refresh-lobby!))
         (when (= :finished (:phase w))
           (clear-input!) (refresh-score! w)
@@ -355,7 +365,8 @@
   (on! "start-game" "click" start-training!) (on! "restart-game" "click" start-training!)
   (on! "leave-game" "click" leave!) (on! "leave-room" "click" leave!)
   (on! "create-room" "click" #(do (save-preferences!) (send! (merge (identity-message) {:type :create :room-name (.-value (by-id "room-name"))
-                                                                                     :visibility (keyword (.-value (by-id "room-visibility")))}))))
+                                                                                     :visibility (keyword (.-value (by-id "room-visibility")))
+                                                                                     :arena (keyword (.-value (by-id "room-map")))}))))
   (on! "join-form" "submit" (fn [event] (.preventDefault event) (join! (.-value (by-id "room-code")))))
   (on! "refresh-rooms" "click" #(send! {:type :list}))
   (doseq [id ["start-round" "rematch"]] (on! id "click" #(do (view/resume-audio!) (send! {:type :start}))))
@@ -425,7 +436,8 @@
     (reset! actions [])
     (case (:mode s)
       :training (let [w (:world s) t (+ (:time w) e/step-ms) next (e/step w {"you" input} 0.025 t)]
-                  (swap! client assoc :previous w :world next) (present-events! next t))
+                  (swap! client assoc :previous w :world next)
+                  (announce-ultimate! w next "you") (present-events! next t))
       :online (when (and (:online s) (= :playing (get-in s [:world :phase])))
                 (let [seq-id (inc (:seq s)) t (server-time) p (predicted-player (:predicted s) input 0.025 t)]
                   (send! (assoc input :type :input :seq seq-id))

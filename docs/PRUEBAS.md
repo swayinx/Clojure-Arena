@@ -6,15 +6,15 @@ Fecha: 26 de octubre de 2026. Las pruebas automáticas se ejecutaron contra el c
 
 | Comprobación | Resultado | Cómo repetir |
 |---|---|---|
-| Compilación oficial ClojureScript, optimización avanzada | Correcta, bundle de aproximadamente 299 KB sin comprimir | `bb build` |
+| Compilación oficial ClojureScript, optimización avanzada | Correcta, bundle de 311 KB sin comprimir | `bb build` |
 | Sintaxis del bundle | Sin error | `node --check public/client.js` |
-| Cliente compilado con DOM/Canvas simulados | Arranque, poderes, ulti, QR, pantalla completa, carga de 12 muestras, volumen y silencio; sin excepciones | `bb test-client` |
-| Reglas y frontera de red | 16 pruebas, 87 aserciones, 0 fallos | `bb test` |
-| 20 clientes WebSocket, 5 salas de 4 | 15 comprobaciones correctas | `bb test-network`, con `bb serve` vacío en otra terminal |
+| Cliente compilado con DOM/Canvas simulados | Arranque, poderes, ulti, QR, pantalla completa, carga de 20 muestras, volumen y silencio; sin excepciones | `bb test-client` |
+| Reglas y frontera de red | 18 pruebas, 111 aserciones, 0 fallos | `bb test` |
+| 20 clientes WebSocket, 5 salas de 4 | 20 comprobaciones correctas | `bb test-network`, con `bb serve` vacío en otra terminal |
 | Estados idénticos por tick | Confirmado para los 4 miembros de cada una de las 5 salas | Prueba de integración |
 | Límite de salas/plazas | Sexta sala y quinto jugador rechazados | Prueba de integración |
 | Inicio exclusivo del creador | Confirmado | Prueba de integración |
-| Aislamiento entre salas | Movimiento y membresía separados | Prueba de integración |
+| Aislamiento entre salas | Movimiento, membresía y mapa seleccionado separados; 5 salas reciben el mapa autoritativo | Prueba de integración |
 | Conexión silenciosa y cierre de pestaña | 6 comprobaciones de presencia; elimina jugador, transfiere creador, actualiza plazas y elimina sala vacía | `ARENA_TEST_PRESENCE=1 bb test-network` |
 | Fluidez del bundle real (Canvas simulado) | Cuatro RAF consecutivos con bala avanzando entre paquetes; desaparece al confirmar impacto; coordenadas finitas y pila Canvas balanceada | `bb test-client` |
 | Tiempo e interpolación puros | Giros ±π, reaparición, jitter, 30/60/144 pasos/s, daño y membresía actuales | `bb test` |
@@ -24,9 +24,9 @@ Fecha: 26 de octubre de 2026. Las pruebas automáticas se ejecutaron contra el c
 | Upgrade WebSocket con Origin HTTPS | Respuesta HTTP 101 | Prueba del túnel |
 | Dos clientes por WSS a través del túnel | Partida iniciada y habilidad sincronizada | Variante Internet de `network_test.cljs` |
 | Salas LAN desde Internet | No se listan, no admiten unión ni creación por túnel | 6 comprobaciones de Internet correctas |
-| Audio OGG | 12 archivos decodificados con FFmpeg sin errores; HTTP entrega los bytes originales con `audio/ogg` | Archivos en `public/audio/` |
-| Procedencia de audio | Bytes idénticos a los ZIP descargados de Kenney; licencias incluidas | `docs/RECURSOS.md` |
-| HTML/recursos | Etiquetas balanceadas, 73 IDs únicos, referencias DOM válidas, cuatro SVG válidos | Comprobación estática |
+| Audio OGG | 20 archivos decodificados con FFmpeg sin errores; HTTP entrega los bytes originales con `audio/ogg` | Archivos en `public/audio/` |
+| Procedencia de arte y audio | PNG y OGG idénticos a los ZIP originales de Kenney y Ansimuz; texto de licencias conservado | `docs/RECURSOS.md` |
+| HTML/recursos | Etiquetas balanceadas, IDs únicos, referencias DOM válidas, cuatro SVG válidos | Comprobación estática |
 
 El túnel de prueba es temporal. Su URL no forma parte de la configuración permanente ni debe incluirse en el QR de la exposición. Crea uno nuevo al realizar la demostración.
 
@@ -102,7 +102,7 @@ Veinte sockets en una PC prueban concurrencia, límites y consistencia. No equiv
 
 Se inspeccionó la captura aportada por el usuario: la arena dejaba franjas laterales amplias y el HUD consumía una fila alta. La nueva distribución usa la altura para el mapa y coloca los indicadores en una columna lateral compacta. El cambio se verificó en código y en las pruebas de ejecución simulada; sigue pendiente una captura de esta versión en el navegador autorizado. La prueba del sonido comprueba archivos, carga y mezcla, no una escucha subjetiva.
 
-La prueba WSS por un túnel real se repitió después de incorporar el audio y pasó sus seis comprobaciones. Las 50 aserciones del motor/protocolo también pasaron. El motor y las reglas no cambiaron en esta revisión.
+La prueba WSS por un túnel real se repitió después de incorporar el audio y pasó sus seis comprobaciones. Las 50 aserciones del motor/protocolo también pasaron. En la revisión de mapas posterior, el motor incorporó diseños por sala y pruebas de colisión para cada uno.
 
 ### Regresión: jugadores que permanecían tras desconectarse
 
@@ -125,3 +125,12 @@ La regresión inicial de proyectiles produjo cuatro fallos: posiciones constante
 Las comprobaciones de túnel, audio y procedencia de recursos de la tabla corresponden a la entrega anterior; sus componentes no cambiaron en esta revisión. No se volvió a publicar un túnel para esta prueba.
 
 Revisión manual pendiente: abrir entrenamiento, mantener WASD + clic, probar Shift/Q/E/R/F, comparar partículas completas/reducidas, observar contador FPS y probar dos equipos con distintas conexiones. El acceso al navegador integrado sigue bloqueado por su política de origen; no se ha validado aquí el aspecto final ni la tasa real de fotogramas.
+
+## Revisión actual: escenarios y sonido
+
+- `bb test`: 18 pruebas y 111 aserciones; incluye mapa por sala, puntos de aparición/suministro accesibles y choques distintos de jugador y bala en Laboratorio Azul.
+- `bb test-client`: el bundle real carga 20 OGG, cambia el nombre del mapa en HUD, muestra Nova cargada y conserva Canvas finito y sin desbalance de `save`/`restore`.
+- `ARENA_TEST_URL=ws://localhost:8082/ws bb test-network`: 20 clientes en cinco salas; 20 comprobaciones, incluidas cinco de mapa autoritativo. Se usó un servidor temporal en 8082.
+- FFmpeg decodificó los 20 OGG sin error. FFprobe leyó ambos atlas PNG. Los PNG y OGG nuevos coincidieron byte a byte con los ZIP originales; se normalizaron los saltos de línea de las licencias de texto.
+
+Estas pruebas confirman reglas, carga de recursos y flujo de red. La calidad percibida del arte y del sonido requiere revisión en un navegador con altavoces; no se presume de una evaluación visual ni auditiva con los adaptadores simulados.

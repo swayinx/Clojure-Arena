@@ -82,3 +82,29 @@
     (is (= 80 (get-in hit [:players "b" :hp])))
     (is (empty? (:shots hit)))
     (is (some #(= :hit (:kind %)) (:events hit)))))
+
+(deftest arena-layouts-share-authoritative-collision
+  (is (= #{:patio :lab :desierto} (set (keys e/arenas))))
+  (doseq [[id arena] e/arenas]
+    (is (every? (fn [[x y]] (not (e/blocked? id x y 16))) (:spawns arena))
+        (str id " no bloquea apariciones"))
+    (is (every? (fn [[x y]] (not (e/blocked? id x y 16))) (:drops arena))
+        (str id " deja accesibles los suministros"))
+    (let [w (-> (e/world :arena 0 id) (e/add-player "a" "A" "brasa") (e/start-round 0))]
+      (is (= id (:arena w)))
+      (is (= id (get-in w [:players "a" :arena])))))
+  (is (= :patio (:arena (e/world :arena 0 :desconocido))))
+  (is (e/blocked? :lab 480 196 16))
+  (is (not (e/blocked? :patio 480 196 16)))
+  (let [start (assoc (e/player "a" "A" "brasa" 0 0) :x 480 :y 150)
+        input (assoc e/empty-input :dy 1)
+        lab (e/move-player (assoc start :arena :lab) input 0.025 2000)
+        patio (e/move-player (assoc start :arena :patio) input 0.025 2000)]
+    (is (= 150 (:y lab)))
+    (is (> (:y patio) 150)))
+  (let [shot {:id 1 :owner "a" :x 420 :y 196 :vx 600 :vy 0 :until 2000}
+        lab (e/advance-shot (assoc (e/world :arena 1000 :lab) :shots []) shot 0.025)
+        patio (e/advance-shot (assoc (e/world :arena 1000 :patio) :shots []) shot 0.025)]
+    (is (empty? (:shots lab)))
+    (is (= 1 (count (:shots patio)))))
+  (is (= :desierto (:arena (e/training "A" "brasa" 0 :desierto)))))

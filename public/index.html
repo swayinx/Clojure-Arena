@@ -102,6 +102,10 @@
                 <b>PRIMERO, SIENTE EL COMBATE.</b
                 ><small>Entrena a solas. Nova cargada desde el inicio.</small>
               </div>
+              <label class="field map-choice">MAPA<select id="training-map">
+                <option value="patio">Patio Cero</option><option value="lab">Laboratorio Azul</option>
+                <option value="desierto">Puesto del Desierto</option>
+              </select></label>
               <button id="start-game" class="primary">
                 ENTRENAR <span>→</span>
               </button>
@@ -133,6 +137,10 @@
                 </select></label
               >
             </div>
+            <label class="field map-choice">MAPA DE LA SALA<select id="room-map">
+              <option value="patio">Patio Cero</option><option value="lab">Laboratorio Azul</option>
+              <option value="desierto">Puesto del Desierto</option>
+            </select></label>
             <button id="create-room" class="primary wide" disabled>
               CREAR SALA
             </button>
@@ -173,6 +181,7 @@
             <div>
               <p id="room-mode" class="eyebrow">MISMA WI-FI</p>
               <h1 id="lobby-title">ARENA DE AMIGOS</h1>
+              <p id="lobby-map" class="eyebrow">Patio Cero</p>
               <p class="room-subtitle">
                 Comparte el enlace. Reúne a tu equipo. Que gane el mejor.
               </p>
@@ -400,7 +409,15 @@
           rel="noopener noreferrer"
           >Digital Audio</a
         >
+        , <a href="https://kenney.nl/assets/desert-shooter-pack" target="_blank" rel="noopener noreferrer">Desert Shooter</a>,
+        <a href="https://kenney.nl/assets/impact-sounds" target="_blank" rel="noopener noreferrer">Impact Sounds</a>
+        y <a href="https://kenney.nl/assets/interface-sounds" target="_blank" rel="noopener noreferrer">Interface Sounds</a>
         · CC0.
+      </p>
+      <p class="audio-credit">Arte de mapas:
+        <a href="https://kenney.nl/assets/desert-shooter-pack" target="_blank" rel="noopener noreferrer">Kenney</a>
+        y <a href="https://opengameart.org/content/warped-top-down-tech-lab-2" target="_blank" rel="noopener noreferrer">Luis Zuno / Ansimuz</a>
+        · licencias originales incluidas.
       </p>
     </dialog>
     <dialog id="host-dialog">

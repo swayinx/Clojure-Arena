@@ -40,16 +40,18 @@
   (-> (connect-n! 4)
       (.then
         (fn [arr]
-          (let [members (vec (array-seq arr)) host (first members)]
+          (let [members (vec (array-seq arr)) host (first members)
+                arena (nth [:patio :lab :desierto :lab :patio] index)]
             (send! host {:type :create :name (str "P" index "-0") :skin "brasa"
-                         :room-name (str "Test " index) :visibility (if (even? index) :lan :internet)})
+                         :room-name (str "Test " index) :arena arena
+                         :visibility (if (even? index) :lan :internet)})
             (-> (await! #(message host :joined) "room created")
                 (.then (fn [joined]
                          (let [code (:code joined)]
                            (doseq [[i c] (map-indexed vector (rest members))]
                              (send! c {:type :join :code code :name (str "P" index "-" (inc i))
                                        :skin (nth ["chispa" "mora" "bastion"] i)}))
-                           (swap! rooms conj {:code code :members members :host host})
+                           (swap! rooms conj {:code code :members members :host host :arena arena})
                            (await! #(every? (fn [c] (= 4 (count (get-in (message c :snapshot) [:world :players])))) members)
                                    "four players synchronized"))))))))))
 (defn close-all! [] (doseq [c @clients] (.close (:ws c))))
@@ -92,7 +94,9 @@
       (.then (fn [_]
                (doseq [r @rooms]
                  (let [snapshots (common-snapshot (:members r)) worlds (map :world snapshots)]
-                   (check! (and (= 4 (count worlds)) (apply = worlds)) (str "Estado idéntico en los cuatro clientes: " (:code r)))))
+                   (check! (and (= 4 (count worlds)) (apply = worlds)) (str "Estado idéntico en los cuatro clientes: " (:code r)))
+                   (check! (every? #(= (:arena r) (:arena %)) worlds)
+                           (str "Mapa autoritativo en la sala: " (:code r)))))
                (let [r (first @rooms) id (:id (message (:host r) :welcome))
                      p (get-in (message (:host r) :snapshot) [:world :players id])
                      other (:host (second @rooms)) other-id (:id (message other :welcome))

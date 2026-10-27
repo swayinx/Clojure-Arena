@@ -295,3 +295,9 @@ La inmutabilidad no significa copia profunda de todo el mundo por cada cambio. T
 `presentation/interpolate` es una función pura: recibe dos instantáneas y una proporción, devuelve otro mapa y conserva los originales. Usa `reduce-kv`, `map`, `keep`, `assoc` y colecciones persistentes. Permite dibujar una bala en posiciones intermedias aunque el servidor publique menos veces que el monitor dibuja.
 
 Esto ejemplifica separación de responsabilidades y transparencia referencial. El mapa dibujado no decide daño: en red esa decisión pertenece a `engine/advance-shot`, ejecutado por el agente de sala. Una prueba verifica que interpolar no modifica daño ni posición autoritativa. Otras prueban que el búfer no restaura jugadores desconectados o proyectiles eliminados. Los átomos del cliente contienen el búfer y efectos locales; las transformaciones matemáticas siguen siendo funciones puras comprobables sin navegador.
+
+## Caso práctico: tres mapas con datos inmutables
+
+`arenas` es un mapa constante que asocia `:patio`, `:lab` y `:desierto` a valores con vectores de obstáculos, apariciones y suministros. Crear una sala aplica `arena-id` al dato recibido; un identificador desconocido se convierte en `:patio`. El mundo conserva la palabra clave en `:arena` al iniciar otra ronda. `blocked?` lee los rectángulos del mapa seleccionado: tanto `move-player` como `advance-shot` lo usan. Esto es **polimorfismo por datos**: una misma función de colisión funciona con tres configuraciones, sin duplicar motor ni reglas.
+
+La selección llega desde el navegador como dato EDN, pero el servidor decide el valor efectivo. Los atlas PNG y los efectos de Canvas se usan solo para dibujar; no contienen lógica de colisión. Al cambiar de mapa, el cliente reemplaza su caché estática de piso, sin mutar el mundo anterior. Las pruebas muestran que spawns y suministros quedan libres y que una bala choca en Laboratorio Azul donde Patio Cero deja pasar.

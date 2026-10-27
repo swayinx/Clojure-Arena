@@ -1,4 +1,4 @@
-# Clojure Arena — Patio Cero
+# Clojure Arena
 
 Arena de combate para **2–4 jugadores por sala**, con hasta **cinco salas independientes** en una PC anfitriona. Incluye entrenamiento individual, dash con inmunidad, escudos, curación, armas temporales, nova, marcador e invitaciones por enlace/QR.
 
@@ -120,13 +120,17 @@ El primer suministro se anuncia a los 8 s; después cae uno cada 9 s. Tarda 1 s 
 
 El arma básica **Pulso** vuelve al terminar la mejora. No hay munición ni recarga de cargadores en esta versión.
 
+### Mapas
+
+Elige **Patio Cero**, **Laboratorio Azul** o **Puesto del Desierto** antes de entrar al entrenamiento o crear una sala. El creador fija el mapa para toda la sala; los demás lo ven en el listado y en la espera. Los tres mapas comparten las mismas reglas, pero tienen colores y coberturas diferentes. El servidor conserva la elección al iniciar otra ronda y calcula choques de jugadores y balas con los obstáculos del mapa elegido.
+
 ### Pantalla completa, interfaz y sonido
 
 Pulsa **PANTALLA COMPLETA** arriba a la derecha. **Esc** vuelve a la ventana; **F11** es la alternativa del navegador. Durante combate se compactan las barras superiores y las habilidades pasan a una columna lateral, conservando la proporción del mapa. En ventanas estrechas aparecen en una barra inferior compacta.
 
 Los iconos indican dash (impulso), escudo, curación (cruz), potencia (rayo) y nova (estrella). El aro conserva la recarga y la barra pequeña muestra la duración activa. Los detalles completos están en **CÓMO JUGAR** y en la descripción al posar el cursor sobre una habilidad.
 
-**AJUSTES** permite regular volumen, silenciar y reducir cámara/partículas. Se usan 12 archivos de audio de Kenney con licencia CC0, incluidos localmente: [créditos y archivos](docs/RECURSOS.md). No necesitas Internet para oírlos en LAN. Abre siempre el juego mediante `http://…`, no como `file://`.
+**AJUSTES** permite regular volumen, silenciar y reducir cámara/partículas. Se usan 20 archivos de audio de Kenney con licencia CC0, incluidos localmente: [créditos y archivos](docs/RECURSOS.md). No necesitas Internet para oírlos en LAN. Abre siempre el juego mediante `http://…`, no como `file://`.
 
 ## 5. Modificar el código
 
@@ -193,7 +197,7 @@ Resultados y límites de las comprobaciones: [docs/PRUEBAS.md](docs/PRUEBAS.md).
 
 ### Fluidez y diagnóstico
 
-La versión 0.2.3 dibuja balas y jugadores entre actualizaciones de red, mantiene un búfer visual de aproximadamente 100 ms y suaviza giros y correcciones pequeñas. Las colisiones y el daño online siguen siendo del servidor. El movimiento propio se predice localmente. El entrenamiento usa interpolación entre pasos locales de 25 ms.
+La versión actual dibuja balas y jugadores entre actualizaciones de red, mantiene un búfer visual de aproximadamente 100 ms y suaviza giros y correcciones pequeñas. Las colisiones y el daño online siguen siendo del servidor. El movimiento propio se predice localmente. El entrenamiento usa interpolación entre pasos locales de 25 ms.
 
 En combate, **FPS** indica fotogramas dibujados por segundo; **ms** indica ida y vuelta de red. FPS bajos apuntan a carga de renderizado o limitación del navegador; ping alto afecta la respuesta online aunque el dibujo sea fluido. No son medidas intercambiables. Prueba «Partículas: reducidas» y baja la vibración en Ajustes si tu equipo lo necesita.
 
