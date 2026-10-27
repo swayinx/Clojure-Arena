@@ -120,9 +120,9 @@ El primer suministro se anuncia a los 8 s; después cae uno cada 9 s. Tarda 1 s 
 
 El arma básica **Pulso** vuelve al terminar la mejora. No hay munición ni recarga de cargadores en esta versión.
 
-### Mapas
+### Maps
 
-Elige **Patio Cero**, **Laboratorio Azul** o **Puesto del Desierto** antes de entrar al entrenamiento o crear una sala. El creador fija el mapa para toda la sala; los demás lo ven en el listado y en la espera. Los tres mapas comparten las mismas reglas, pero tienen colores y coberturas diferentes. El servidor conserva la elección al iniciar otra ronda y calcula choques de jugadores y balas con los obstáculos del mapa elegido.
+Choose **Patio Cero**, **Canales de Agua**, or **Fractura de Lava** before training or creating a room. The room creator selects the arena for everyone. Water slows normal movement to 150 units per second while preserving dash speed. Lava deals 7 damage every 500 ms and leaves a 1.5-second burn that deals 3 damage every 500 ms after a player exits. The server keeps the selected arena across rounds and authoritatively resolves movement, collisions, and terrain damage.
 
 ### Pantalla completa, interfaz y sonido
 
@@ -208,14 +208,16 @@ Después de actualizar: detén el servidor anterior con Ctrl+C, ejecuta `bb serv
 | Archivo | Responsabilidad |
 |---|---|
 | `src/arena/engine.cljc` | Reglas puras e inmutables, compartidas entre Clojure y ClojureScript |
+| `src/arena/terrain.cljc` | Shared immutable arena layouts, obstacle geometry, and water/lava hazard bounds |
 | `src/arena/server.clj` | Agentes, salas, HTTP, WebSocket y túnel |
 | `src/arena/client.cljs` | `arena.client`: startup, input, transport, match, prediction, simulation, tick, and bindings; retains the socket and last-message state |
 | `src/arena/client/state.cljs` | `arena.client.state`: shared `defonce` state atoms |
 | `src/arena/client/ui.cljs` | `arena.client.ui`: DOM, preferences, notifications, abilities, rooms (with an on-join callback), invites, HUD, events, QR, copy, and fullscreen; does not require `arena.client` |
 | `src/arena/presentation.cljc` | Interpolación pura de jugadores/balas, búfer y amortiguación por tiempo |
-| `src/arena/view.cljs` | `arena.view`: composition, floor, players, shots, pickups, ultimates, crosshair, and draw; preserves the public facade |
+| `src/arena/view.cljs` | `arena.view`: scene composition, players, shots, pickups, ultimates, crosshair, and draw; preserves the public facade |
 | `src/arena/view/canvas_module.cljs` | `arena.view.canvas-module`: initialization, palette, sprites, primitives, reduced motion, and cap |
 | `src/arena/view/effects_module.cljs` | `arena.view.effects-module`: settings, state, audio, particles, events, advance, ghost, and effects |
+| `src/arena/view/terrain_module.cljs` | `arena.view.terrain-module`: cached arena floors and animated water/lava rendering |
 | `src/arena/audio.cljs` | `arena.audio`: reusable sound samples, cache, mixing, and volume support for effects |
 | `public/index.html`, `public/style.css`, `public/combat.css` | Estructura y presentación de la página |
 | `public/art/` | Cuatro personajes y ocho cuadros por personaje |

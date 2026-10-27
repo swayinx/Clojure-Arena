@@ -25,12 +25,13 @@
         mine? (= you player) my-hit? (= you attacker)
         col (case kind :dash "#76f4ce" :shield "#6acfff" :heal "#a2f078" :boost "#ffbe67"
                   :ult (if mine? "#c7a0ff" "#ff817c") :ult-cast (if mine? "#c7a0ff" "#ff817c") :hit (if (pos? absorbed) "#6acfff" "#ffe3a5")
-                  :kill color :pickup "#d9ed91" :wall "#a8c5b9" color)
-        n (case kind :shot 3 :hit 7 :kill 26 :dash 13 :ult 46 :heal 10 :shield 12 :boost 16 :wall 3 :pickup 18 0)
-        radius (case kind :ult 125 :kill 75 :dash 44 :shield 57 :heal 52 :boost 55 :hit 25 :pickup 50 0)
+                  :burn "#ff7043" :kill color :pickup "#d9ed91" :wall "#a8c5b9" color)
+        n (case kind :shot 3 :hit 7 :kill 26 :dash 13 :ult 46 :heal 10 :shield 12 :boost 16 :burn 8 :wall 3 :pickup 18 0)
+        radius (case kind :ult 125 :kill 75 :dash 44 :shield 57 :heal 52 :boost 55 :hit 25 :burn 20 :pickup 50 0)
         text (case kind :hit (if (pos? amount) (str "−" amount) (str "ESCUDO −" absorbed))
                    :heal (str "+" amount) :kill (when my-hit? "+1 BAJA")
                    :pickup (case (:item event) :rapid "RÁFAGA" :scatter "DISPERSOR" :heal "+35 VIDA" :shield "+60 ESCUDO" :energy "+35 NOVA" "MEJORA")
+                   :burn (when mine? "FUEGO")
                    :dodge (when mine? "INMUNE") nil)]
     (when (or mine? my-hit? (= kind :ult) (= kind :ult-cast)) (sound! kind))
     (cond-> fx
@@ -85,11 +86,12 @@
       (doseq [i (range 12)]
         (let [x (+ 58 (mod (+ (* i 137) (* now 0.003)) 844))
               y (+ 56 (mod (- (* i 83) (* now 0.006)) 488))]
-          (cv/rect x y 1.5 1.5 (case arena :desierto "#ffd8a71e" :lab "#a8ddf522" "#b5d9c51c"))))
+          (cv/rect x y 1.5 1.5 (case arena :lava "#ff8a6533" :agua "#80deea33" "#b5d9c51c"))))
       (doseq [x [74 886] y [210 368]]
         (let [age (mod (+ now (* x 5)) 2800)]
           (.save cv/ctx) (set! (.-globalAlpha cv/ctx) (* 0.09 (e/sin (* e/pi (/ age 2800)))))
-          (cv/circle (+ x (* 5 (e/sin (/ age 800)))) (- y (/ age 80)) (+ 5 (/ age 260)) "#b0d6d3")
+          (cv/circle (+ x (* 5 (e/sin (/ age 800)))) (- y (/ age 80)) (+ 5 (/ age 260))
+                     (case arena :lava "#ff7043" :agua "#80deea" "#b0d6d3"))
           (.restore cv/ctx))))))
 (defn nova-burst! [r progress]
   (let [{:keys [x y color]} r

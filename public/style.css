@@ -327,7 +327,7 @@ main {
   flex-direction: column;
   align-items: center;
   min-width: 0;
-  padding: 10px 6px 14px;
+  padding: 8px 6px 10px;
   background: linear-gradient(160deg, #263034, #192124);
   border: 1px solid var(--line);
   color: var(--text);
@@ -360,32 +360,33 @@ main {
 }
 .fighter-number {
   position: absolute;
-  left: 10px;
-  top: 9px;
-  font: 9px Mono;
+  left: 8px;
+  top: 7px;
+  font: 8px Mono;
   color: var(--fighter);
 }
 .fighter-card b {
   font-weight: 900;
-  font-size: 21px;
+  font-size: 16px;
   letter-spacing: 0.02em;
 }
 .fighter-card small {
   font: 7px Mono;
-  margin-top: 4px;
+  margin-top: 2px;
   white-space: nowrap;
   color: #8eaaa5;
 }
 .sprite {
   display: block;
-  width: 96px;
-  height: 96px;
+  width: 64px;
+  height: 64px;
+  --frame: 64px;
   background-repeat: no-repeat;
-  background-size: 768px 96px;
+  background-size: 512px 64px;
   image-rendering: pixelated;
   background-position: 0 0;
   animation: preview-walk 0.72s steps(1) infinite;
-  filter: drop-shadow(0 5px 8px #0005);
+  filter: drop-shadow(0 4px 6px #0005);
 }
 .sprite.brasa {
   background-image: url("art/brasa.svg");
@@ -1261,22 +1262,22 @@ dialog h2 {
     gap: 19px;
   }
   .fighter-card {
-    padding: 15px 10px 20px;
+    padding: 10px 8px 12px;
   }
   .fighter-card .sprite {
-    width: 128px;
-    height: 128px;
-    background-size: 1024px 128px;
-    --frame: 128px;
+    width: 80px;
+    height: 80px;
+    background-size: 640px 80px;
+    --frame: 80px;
   }
   .hero-copy h1 {
     font-size: min(9vw, 15vh);
   }
   .fighter-card b {
-    font-size: 26px;
+    font-size: 19px;
   }
   .fighter-card small {
-    font-size: 9px;
+    font-size: 8px;
   }
 }
 @media (max-width: 1120px) {

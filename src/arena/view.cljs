@@ -3,7 +3,8 @@
   (:require [arena.engine :as e]
             [arena.presentation :as visual]
             [arena.view.canvas-module :as cv]
-            [arena.view.effects-module :as fx]))
+            [arena.view.effects-module :as fx]
+            [arena.view.terrain-module :as terrain]))
 
 ;; Re-export the complete original arena.view API.
 (def palette cv/palette)
@@ -36,123 +37,14 @@
 (def draw-ghosts! fx/draw-ghosts!)
 (def draw-effects! fx/draw-effects!)
 
-(def floor-cache (atom nil))
-(def map-art
-  (into {} (for [[id file] [[:lab "lab-tileset.png"] [:desierto "desert-tilemap.png"]]]
-             (let [im (js/Image.)]
-               (set! (.-onload im) #(reset! floor-cache nil))
-               (set! (.-src im) (str "art/" file))
-               [id im]))))
-(defn paint-patio! []
-  (rect -12 -12 984 624 "#0c171d")
-  (polygon [[40 15] [920 15] [945 40] [945 560] [920 585] [40 585] [15 560] [15 40]] "#34484a")
-  (polygon [[42 25] [918 25] [935 42] [935 558] [918 575] [42 575] [25 558] [25 42]] "#1c2d32")
-  (rect 44 44 872 512 "#203137")
-  (doseq [x (range 44 917 44)] (line x 44 x 556 "#abcfc909" 1))
-  (doseq [y (range 44 557 44)] (line 44 y 916 y "#abcfc909" 1))
-  (doseq [[x y] [[44 44] [696 44] [44 424] [696 424]]]
-    (rect x y 220 132 "#9acbb203") (line x (+ y 132) (+ x 220) (+ y 132) "#8fc6b615" 1))
-  ;; Panels, drains, and painted routes are rasterized once.
-  (doseq [x (range 68 900 88) y (range 66 540 88)]
-    (line x y (+ x 28) y "#aecfc310" 1)
-    (rect (+ x 30) (- y 1) 2 2 "#8baca922"))
-  (doseq [x [64 876] y [190 348]]
-    (rect x y 20 62 "#101e26")
-    (doseq [yy (range (+ y 5) (+ y 58) 7)] (line (+ x 3) yy (+ x 17) yy "#3d5057" 2))
-    (rect (+ x 2) (+ y 63) 16 2 "#8baca92b"))
-  (doseq [x [246 700]]
-    (line x 80 x 520 "#9abbb41a" 2)
-    (doseq [y [100 300 500]]
-      (line (- x 5) (- y 5) x y "#9abbb433" 1)
-      (line x y (+ x 5) (- y 5) "#9abbb433" 1)))
-  (doseq [[x y label-text] [[72 80 "01 / NORTE"] [886 530 "02 / SUR"]]]
-    (label label-text x y "#aecfc34a" 7))
-  (ring 480 300 68 "#15262d" 14)
-  (doseq [i (range 12)]
-    (let [a (* i (/ e/pi 6))]
-      (line (+ 480 (* 65 (e/cos a))) (+ 300 (* 65 (e/sin a)))
-            (+ 480 (* 74 (e/cos a))) (+ 300 (* 74 (e/sin a))) "#6c96933a" 2)))
-  (line 480 44 480 556 "#b6dac91b" 2) (line 44 300 916 300 "#b6dac912" 1)
-  (ring 480 300 102 "#a6cebc15" 2) (ring 480 300 95 "#a6cebc0c" 1)
-  (polygon [[480 276] [504 300] [480 324] [456 300]] "#d5f5cd0a")
-  (label "PATIO" 480 260 "#a7d4c620" 18) (label "CERO" 480 354 "#a7d4c620" 18)
-  (doseq [x [112 848] y [84 516]]
-    (ring x y 18 "#9dd1bb25" 1)
-    (line (- x 12) y (+ x 12) y "#bde5c930" 1)
-    (line x (- y 12) x (+ y 12) "#bde5c930" 1))
-  (doseq [y [160 438]]
-    (line 367 y 593 y "#bce2c91a" 2)
-    (doseq [x (range 385 580 32)]
-      (rect x (- y 2) 12 4 "#d3c78236")))
-  (doseq [[x y] e/spawn-points]
-    (ring x y 37 "#9cc8b41a" 2)
-    (doseq [i (range 4)] (let [a (* i (/ e/pi 2))]
-                          (line (+ x (* (e/cos a) 30)) (+ y (* (e/sin a) 30))
-                                (+ x (* (e/cos a) 43)) (+ y (* (e/sin a) 43)) "#9bc3ad33" 2))))
-  (doseq [[x y w h] [[46 20 170 3] [744 20 170 3] [46 577 170 3] [744 577 170 3]]]
-    (rect (- x 1) (- y 3) (+ w 2) (+ h 6) "#caf49308") (rect x y w h "#9cba72"))
-  (doseq [[x y] [[20 110] [20 430] [937 110] [937 430]]]
-    (rect x y 3 60 "#669ca0"))
-  (doseq [{:keys [x y w h]} (get-in e/arenas [:patio :obstacles])]
-    (rect (+ x 4) (+ y 8) w h "#0b171e80")
-    (rect x y w h "#415255") (rect (+ x 3) (+ y 3) (- w 6) (- h 8) "#2c3d43")
-    (rect x y w 3 "#657c79") (rect x (+ y h -5) w 5 "#17262c")
-    (line (+ x 10) (+ y 12) (+ x w -10) (+ y 12) "#57706b" 2)
-    (line (+ x 10) (+ y 18) (+ x w -10) (+ y 18) "#3c5354" 1)
-    (rect (+ x 7) (+ y 6) (- w 14) 3 "#90c9b766")
-    (doseq [yy (range (+ y 25) (+ y h -11) 7)]
-      (line (+ x 9) yy (+ x w -9) yy "#8bb5ac24" 1))
-    (doseq [offset [0 13 26 39]]
-      (polygon [[(+ x 8 offset) (+ y h -12)] [(+ x 14 offset) (+ y h -12)]
-                [(+ x 21 offset) (+ y h -5)] [(+ x 15 offset) (+ y h -5)]] "#d3b86b80"))
-    (rect (+ x 7) (+ y 6) 4 3 "#c8e299") (rect (+ x w -11) (+ y 6) 4 3 "#c8e299")))
-(defn paint-variant! [arena]
-  (let [lab? (= arena :lab)
-        base (if lab? "#102536" "#4a302c")
-        border (if lab? "#69a8c7" "#e4b275")
-        seam (if lab? "#93c9da27" "#f7cd9129")
-        im (get map-art arena)
-        image? (and im (.-complete im) (pos? (.-naturalWidth im)))
-        [sx sy size] (if lab? [0 128 32] [0 51 16])]
-    (rect 0 0 960 600 (if lab? "#081522" "#271c22"))
-    (rect 24 24 912 552 (if lab? "#2b5268" "#986a56"))
-    (rect 40 40 880 520 base)
-    ;; The original atlas repeats in the static cache; the engine defines collisions.
-    (when image?
-      (doseq [x (range 40 920 32) y (range 40 560 32)]
-        (.drawImage ctx im sx sy size size x y 32 32)))
-    (rect 40 40 880 520 (if lab? "#0a223088" "#613e3050"))
-    (doseq [x (range 40 921 32)] (line x 40 x 560 seam 1))
-    (doseq [y (range 40 561 32)] (line 40 y 920 y seam 1))
-    (doseq [[x y] (get-in e/arenas [arena :spawns])]
-      (ring x y 32 (str border "66") 2)
-      (doseq [i (range 4)]
-        (let [a (* i (/ e/pi 2))]
-          (line (+ x (* 25 (e/cos a))) (+ y (* 25 (e/sin a)))
-                (+ x (* 37 (e/cos a))) (+ y (* 37 (e/sin a))) border 2))))
-    (ring 480 300 77 (str border "32") 2)
-    (ring 480 300 61 (str border "22") 1)
-    (label (if lab? "LAB / 02" "DESIERTO / 03") 480 300 (str border "44") 15)
-    (doseq [{:keys [x y w h]} (get-in e/arenas [arena :obstacles])]
-      (rect (+ x 6) (+ y 8) w h "#08131ba0")
-      (rect x y w h (if lab? "#24465b" "#62443d"))
-      (rect (+ x 4) (+ y 4) (- w 8) (- h 8) (if lab? "#467089" "#bc8162"))
-      (when image?
-        (let [[cx cy cs] (if lab? [272 80 32] [0 170 16])]
-          (doseq [xx (range (+ x 6) (+ x w -16) 24)]
-            (.drawImage ctx im cx cy cs cs xx (+ y 6) 24 (- h 14)))))
-      (rect x y w 4 border)
-      (rect x (+ y h -5) w 5 (if lab? "#142b3d" "#48302a"))
-      (doseq [xx (range (+ x 10) (+ x w -8) 18)]
-        (line xx (+ y h -11) (+ xx 7) (+ y h -5) (str border "99") 2)))
-    (doseq [x [24 932] y [90 450]] (rect x y 4 50 border))))
-(defn cache-floor! [arena]
-  (when (not= arena (:arena @floor-cache))
-    (if (= arena :patio) (paint-patio!) (paint-variant! arena))
-    (let [copy (.createElement js/document "canvas")]
-      (set! (.-width copy) 960) (set! (.-height copy) 600)
-      (.drawImage (.getContext copy "2d") canvas 0 0)
-      (reset! floor-cache {:arena arena :canvas copy}))))
+(def floor-cache terrain/floor-cache)
+(def map-art terrain/map-art)
+(def elemental-art terrain/elemental-art)
+(def paint-patio! terrain/paint-patio!)
+(def paint-variant! terrain/paint-variant!)
+(def cache-floor! terrain/cache-floor!)
+(defn draw-hazards! [arena-key now]
+  (terrain/draw-hazards! arena-key now @settings))
 (defn draw-pickups! [world now]
   (doseq [{:keys [x y kind land-at until]} (:pickups world)]
     (let [fall (e/clamp (/ (- land-at now) 1000) 0 1)
@@ -300,6 +192,14 @@
           (arc x y 43 (- (/ e/pi 2)) (+ (- (/ e/pi 2)) (* (/ (:shield p) 60) 2 e/pi)) "#6acfff" 2))
         (.restore ctx))
       (when hurt? (arc x y 35 (+ angle 2.2) (+ angle 4.1) "#ff817c" 3))
+      (when (< now (:burn-until p 0))
+        (let [flame-flicker (* 3 (e/sin (+ (* fx-now 0.02) (* x 0.1))))]
+          (.save ctx) (set! (.-globalAlpha ctx) 0.85)
+          (circle (+ x flame-flicker) (- y 10) 8 "#ff5722cc")
+          (circle (- x flame-flicker) (- y 15) 5 "#ffeb3baa")
+          (.restore ctx)))
+      (when (= :water (e/terrain-at (:arena p) (:x p) (:y p)))
+        (ring x (+ y 20) (+ 8 (* 4 (e/sin (* fx-now 0.01)))) "#6ad4ff55" 1.5))
       (let [name (if mine? "TÚ" (:name p))]
         (label name x (- y 46) (if mine? "#e8f7b9" color) 9))
       (rect (- x 22) (+ y 33) 44 4 "#0a161d")
@@ -331,6 +231,7 @@
                     (* mag 0.5 (+ (e/cos (* fx-now 0.052)) (e/cos (* fx-now 0.083))))))
   (.drawImage ctx (:canvas @floor-cache) 0 0)
   (draw-ambient! (:arena world) fx-now)
+  (draw-hazards! (:arena world) fx-now)
   (draw-pickups! world now) (draw-ultimates! world you now) (draw-ghosts! fx-now)
   (doseq [p (sort-by :y (vals (:players world)))] (draw-player! p you now fx-now))
   (draw-shots! world you) (draw-effects! fx-now)

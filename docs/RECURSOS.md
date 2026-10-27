@@ -5,7 +5,7 @@
 - `src/arena/*.clj`, `*.cljc`, `*.cljs`: servidor, motor, presentación y cliente de esta entrega.
 - `scripts/arena/build.clj`: herramientas de compilación.
 - `public/art/*.svg`: hojas de personaje conservadas del prototipo de Clojure Arena, con ocho cuadros por personaje. No se ha importado código o arte de Ashfall en esta ampliación.
-- HTML/CSS, composición de los mapas, obstáculos y efectos dibujados con Canvas: presentación propia del proyecto. Los dos atlas externos se conservan intactos y acreditados abajo.
+- HTML/CSS, map composition, obstacles, and Canvas effects: project presentation. The elemental tile atlas is credited below and included unmodified.
 - Iconos de habilidades: SVG propios integrados en `client.cljs`, con siluetas de impulso, escudo, cruz, rayo y nova.
 - Sonidos: muestras de Kenney CC0 en `public/audio/`, reproducidas desde ClojureScript mediante Web Audio. Se retiró la síntesis por osciladores.
 
@@ -20,8 +20,7 @@
 | Space Mono | Fuente local de datos e indicadores | SIL Open Font License; `public/fonts/SPACE-MONO-LICENSE.txt` |
 | QR Code generator / Project Nayuki | `public/vendor/qrcodegen.js`, solo invitaciones | MIT, encabezado de licencia conservado; [fuente](https://www.nayuki.io/page/qr-code-generator-library) |
 | Kenney Sci-fi Sounds, Digital Audio, Desert Shooter, Impact Sounds e Interface Sounds | `public/audio/`, 20 muestras OGG sin modificar | CC0; licencias originales incluidas y créditos en Ajustes |
-| Kenney Desert Shooter | `public/art/desert-tilemap.png` | CC0; `public/art/DESERT-LICENSE.txt` |
-| Luis Zuno / Ansimuz, Warped Top-Down Tech Lab 2 | `public/art/lab-tileset.png` | Licencia del autor incluida en `public/art/LAB-LICENSE.txt`; uso, adaptación y redistribución permitidos |
+| Ogrebane, 16x16 Tiles | `public/art/elemental-tiles.png` | CC0; `public/art/ELEMENTAL-LICENSE.txt` |
 | cloudflared | Túnel opcional, binario no versionado | [Cloudflare](https://github.com/cloudflare/cloudflared), Apache-2.0 |
 
 La biblioteca QR es JavaScript compilado desde TypeScript y se incluye sin modificaciones. No implementa reglas, red ni render del combate. Su SHA-256 en esta entrega es:
@@ -46,9 +45,9 @@ No se emplean CDNs en el juego: fuentes, sprites, estilos, bundle y QR se sirven
 
 Los PDFs académicos originales se conservan solo en la PC de trabajo y se excluyen del repositorio y de su historial. No se les atribuye una licencia abierta.
 
-## Arte de escenarios
+## Arena artwork
 
-Se revisaron atlas pixelados del autor antes de incorporarlos. [Desert Shooter Pack de Kenney](https://kenney.nl/assets/desert-shooter-pack) aporta el atlas original de 16 px para **Puesto del Desierto**. [Warped Top-Down Tech Lab 2 de Luis Zuno / Ansimuz](https://opengameart.org/content/warped-top-down-tech-lab-2) aporta el atlas original de 32 px para **Laboratorio Azul**. **Patio Cero** mantiene arte propio de Canvas. Los PNG no se editaron; la composición, colores de entorno, cobertura y detalles se dibujan en `view.cljs`. Sus licencias originales están junto a los archivos. El servidor usa la misma lista inmutable de rectángulos que el cliente dibuja, en `engine.cljc`.
+[Ogrebane's 16x16 Tiles](https://opengameart.org/content/16x16-tiles) supplies the unmodified 16-pixel atlas used by **Canales de Agua** and **Fractura de Lava**. Its CC0 license is included beside the PNG. **Patio Cero** keeps its Canvas artwork. The `arena.view.terrain-module` module composes the floors and hazard effects; the server uses the immutable geometry from `arena.terrain` for collisions and damage.
 
 No se importó arte ni audio de Brawl Stars. Se tomó como referencia la señal legible de habilidad cargada; el icono, el color, el halo y el aviso de Nova son propios.
 
@@ -60,7 +59,7 @@ Autor de todas las muestras: **Kenney / Kenney Vleugels**, licencia **CC0 1.0**.
 |---|---|---|
 | [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) | Disparos, eliminación, escudo y subgrave de Nova | `KENNEY-SCIFI-LICENSE.txt` |
 | [Digital Audio](https://kenney.nl/assets/digital-audio) | Curación, potencia, carga y suministro | `KENNEY-DIGITAL-LICENSE.txt` |
-| [Desert Shooter](https://kenney.nl/assets/desert-shooter-pack) | Dash con dos variantes y explosión de Nova | `DESERT-LICENSE.txt` en `public/art/` |
+| [Desert Shooter](https://kenney.nl/assets/desert-shooter-pack) | Dash con dos variantes y explosión de Nova | `DESERT-LICENSE.txt` en `public/audio/` |
 | [Impact Sounds](https://kenney.nl/assets/impact-sounds) | Impacto metálico medio | `IMPACT-LICENSE.txt` |
 | [Interface Sounds](https://kenney.nl/assets/interface-sounds) | Confirmación de Nova lista y capas breves de poderes | `INTERFACE-LICENSE.txt` |
 

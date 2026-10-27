@@ -1,6 +1,7 @@
 (ns arena.engine
   "Núcleo funcional compartido. No lee relojes, red, DOM ni átomos.
-   Cada transición recibe valores y devuelve un nuevo mapa persistente.")
+   Cada transición recibe valores y devuelve un nuevo mapa persistente."
+  (:require [arena.terrain :as terrain]))
 
 (def width 960)
 (def height 600)
@@ -30,26 +31,11 @@
   {:pulse {:name "PULSO" :interval 180 :damage 20 :speed 700 :angles [0]}
    :rapid {:name "RÁFAGA" :interval 90 :damage 12 :speed 760 :angles [0]}
    :scatter {:name "DISPERSOR" :interval 480 :damage 14 :speed 620 :angles [-0.20 -0.10 0 0.10 0.20]}})
-(def obstacles [{:x 292 :y 164 :w 74 :h 46}
-                {:x 594 :y 164 :w 74 :h 46}
-                {:x 292 :y 390 :w 74 :h 46}
-                {:x 594 :y 390 :w 74 :h 46}])
-(def spawn-points [[132 112] [828 488] [828 112] [132 488]])
-(def drop-points [[480 300] [480 122] [480 478] [162 300] [798 300]])
-(def arenas
-  {:patio {:name "Patio Cero" :obstacles obstacles :spawns spawn-points :drops drop-points}
-   :lab {:name "Laboratorio Azul"
-         :obstacles [{:x 202 :y 224 :w 110 :h 34} {:x 648 :y 224 :w 110 :h 34}
-                     {:x 202 :y 342 :w 110 :h 34} {:x 648 :y 342 :w 110 :h 34}
-                     {:x 430 :y 170 :w 100 :h 36} {:x 430 :y 394 :w 100 :h 36}]
-         :spawns spawn-points :drops drop-points}
-   :desierto {:name "Puesto del Desierto"
-              :obstacles [{:x 244 :y 156 :w 72 :h 52} {:x 644 :y 156 :w 72 :h 52}
-                          {:x 244 :y 392 :w 72 :h 52} {:x 644 :y 392 :w 72 :h 52}
-                          {:x 388 :y 240 :w 44 :h 48} {:x 528 :y 240 :w 44 :h 48}
-                          {:x 388 :y 312 :w 44 :h 48} {:x 528 :y 312 :w 44 :h 48}]
-              :spawns spawn-points :drops drop-points}})
-(defn arena-id [id] (if (contains? arenas id) id :patio))
+(def obstacles terrain/obstacles)
+(def spawn-points terrain/spawn-points)
+(def drop-points terrain/drop-points)
+(def arenas terrain/arenas)
+(def arena-id terrain/arena-id)
 (def drop-kinds [:rapid :heal :scatter :shield :energy])
 (def empty-input {:dx 0 :dy 0 :ax 480 :ay 300 :fire false :actions []})
 
@@ -60,13 +46,17 @@
            (< (distance x y (clamp x ox (+ ox w)) (clamp y oy (+ oy h))) radius))
          (get-in arenas [(arena-id arena) :obstacles]))))
 
+(def terrain-at terrain/terrain-at)
+
 (defn move-player
   "Movimiento puro; usa deslizamiento por ejes para no atravesar la cobertura."
   [p input dt now]
   (let [dashing? (< now (:dash-until p))
         moving (direction (:dx input 0) (:dy input 0))
         dir (if dashing? (:dash-dir p) moving)
-        speed (if dashing? 900 280)
+        speed (cond dashing? 900
+                    (= :water (terrain-at (:arena p) (:x p) (:y p))) 150
+                    :else 280)
         nx (clamp (+ (:x p) (* speed dt (:dx dir))) 42 918)
         x (if (blocked? (:arena p) nx (:y p) 16) (:x p) nx)
         ny (clamp (+ (:y p) (* speed dt (:dy dir))) 42 558)
@@ -87,6 +77,7 @@
      :dash-dir {:dx 1 :dy 0} :last-dir {:dx 1 :dy 0}
      :hurt-until 0 :shield-hit-until 0 :muzzle-until 0 :last-shot -1000
      :spawn-until (+ now 1200) :respawn-at 0 :ulti 20 :ult-at 0 :ult-target nil
+     :burn-until 0 :hazard-next 0
      :weapon :pulse :weapon-until 0 :cooldowns {:dash 0 :shield 0 :heal 0 :boost 0}})))
 
 (defn world
@@ -172,6 +163,23 @@
             (and attacker (not= attacker victim) (get-in w [:players attacker]))
             (-> (update-in [:players attacker :kills] inc) (charge attacker 22)))
           w3)))))
+
+(defn apply-terrain
+  "Water slows movement; lava and burn damage are resolved every 500 ms."
+  [w id]
+  (let [p (get-in w [:players id]) now (:time w)
+        lava? (= :lava (terrain-at (:arena w) (:x p) (:y p)))
+        protected? (or (< now (:spawn-until p)) (< now (:dash-until p)))]
+    (if (or (not (:alive p)) protected?) w
+      (let [burning? (< now (:burn-until p))
+            w (cond-> w
+                lava? (assoc-in [:players id :burn-until] (+ now 1500))
+                (and lava? (not burning?))
+                (add-event :burn {:player id :x (:x p) :y (:y p)}))]
+        (if (and (or lava? burning?) (>= now (:hazard-next p)))
+          (-> w (assoc-in [:players id :hazard-next] (+ now 500))
+              (damage-player id nil (if lava? 7 3) (if lava? :lava :burn)))
+          w)))))
 
 (defn activate
   "Valida recursos y cooldowns. Nunca consume curación con vida completa."
@@ -327,7 +335,8 @@
                                s (if (:alive p)
                                    (reduce #(activate %1 id %2 input) s (:actions input)) s)]
                            (if (get-in s [:players id :alive])
-                             (-> s (update-in [:players id] move-player input dt now) (fire id input)) s)))
+                             (-> s (update-in [:players id] move-player input dt now)
+                                 (apply-terrain id) (fire id input)) s)))
                        w0 (keys (:players w0)))
             w2 (reduce #(advance-shot %1 %2 dt) (assoc w1 :shots []) (:shots w1))
             w3 (-> w2 resolve-ultimates drop-item collect-items)
