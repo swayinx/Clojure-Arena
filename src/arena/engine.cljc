@@ -1,6 +1,7 @@
 (ns arena.engine
   "Núcleo funcional compartido. No lee relojes, red, DOM ni átomos.
-   Cada transición recibe valores y devuelve un nuevo mapa persistente.")
+   Cada transición recibe valores y devuelve un nuevo mapa persistente."
+  (:require [arena.terrain :as terrain]))
 
 (def width 960)
 (def height 600)
@@ -30,32 +31,11 @@
   {:pulse {:name "PULSO" :interval 180 :damage 20 :speed 700 :angles [0]}
    :rapid {:name "RÁFAGA" :interval 90 :damage 12 :speed 760 :angles [0]}
    :scatter {:name "DISPERSOR" :interval 480 :damage 14 :speed 620 :angles [-0.20 -0.10 0 0.10 0.20]}})
-(def obstacles [{:x 292 :y 164 :w 74 :h 46}
-                {:x 594 :y 164 :w 74 :h 46}
-                {:x 292 :y 390 :w 74 :h 46}
-                {:x 594 :y 390 :w 74 :h 46}])
-(def spawn-points [[132 112] [828 488] [828 112] [132 488]])
-(def drop-points [[480 300] [480 122] [480 478] [162 300] [798 300]])
-(def arenas
-  {:patio {:name "Patio Cero" :obstacles obstacles :spawns spawn-points :drops drop-points}
-   :agua {:name "Canales de Agua"
-          :obstacles [{:x 385 :y 165 :w 70 :h 48} {:x 505 :y 165 :w 70 :h 48}
-                      {:x 385 :y 387 :w 70 :h 48} {:x 505 :y 387 :w 70 :h 48}]
-          :hazards [{:x 220 :y 205 :w 125 :h 78 :kind :water}
-                    {:x 615 :y 205 :w 125 :h 78 :kind :water}
-                    {:x 220 :y 317 :w 125 :h 78 :kind :water}
-                    {:x 615 :y 317 :w 125 :h 78 :kind :water}]
-          :spawns spawn-points :drops drop-points}
-   :lava {:name "Fractura de Lava"
-          :obstacles [{:x 412 :y 150 :w 136 :h 44} {:x 412 :y 406 :w 136 :h 44}
-                      {:x 178 :y 154 :w 56 :h 46} {:x 726 :y 154 :w 56 :h 46}
-                      {:x 178 :y 400 :w 56 :h 46} {:x 726 :y 400 :w 56 :h 46}]
-          :hazards [{:x 292 :y 204 :w 105 :h 78 :kind :lava}
-                    {:x 563 :y 204 :w 105 :h 78 :kind :lava}
-                    {:x 292 :y 318 :w 105 :h 78 :kind :lava}
-                    {:x 563 :y 318 :w 105 :h 78 :kind :lava}]
-          :spawns spawn-points :drops drop-points}})
-(defn arena-id [id] (if (contains? arenas id) id :patio))
+(def obstacles terrain/obstacles)
+(def spawn-points terrain/spawn-points)
+(def drop-points terrain/drop-points)
+(def arenas terrain/arenas)
+(def arena-id terrain/arena-id)
 (def drop-kinds [:rapid :heal :scatter :shield :energy])
 (def empty-input {:dx 0 :dy 0 :ax 480 :ay 300 :fire false :actions []})
 
@@ -66,10 +46,7 @@
            (< (distance x y (clamp x ox (+ ox w)) (clamp y oy (+ oy h))) radius))
          (get-in arenas [(arena-id arena) :obstacles]))))
 
-(defn terrain-at [arena x y]
-  (some (fn [{ox :x oy :y w :w h :h kind :kind}]
-          (when (and (<= ox x (+ ox w)) (<= oy y (+ oy h))) kind))
-        (get-in arenas [(arena-id arena) :hazards])))
+(def terrain-at terrain/terrain-at)
 
 (defn move-player
   "Movimiento puro; usa deslizamiento por ejes para no atravesar la cobertura."
@@ -188,7 +165,7 @@
           w3)))))
 
 (defn apply-terrain
-  "Agua ralentiza; lava y quemadura se resuelven en el servidor cada 500 ms."
+  "Water slows movement; lava and burn damage are resolved every 500 ms."
   [w id]
   (let [p (get-in w [:players id]) now (:time w)
         lava? (= :lava (terrain-at (:arena w) (:x p) (:y p)))

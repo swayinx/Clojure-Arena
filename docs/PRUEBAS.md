@@ -126,11 +126,11 @@ Las comprobaciones de túnel, audio y procedencia de recursos de la tabla corres
 
 Revisión manual pendiente: abrir entrenamiento, mantener WASD + clic, probar Shift/Q/E/R/F, comparar partículas completas/reducidas, observar contador FPS y probar dos equipos con distintas conexiones. El acceso al navegador integrado sigue bloqueado por su política de origen; no se ha validado aquí el aspecto final ni la tasa real de fotogramas.
 
-## Revisión actual: escenarios y sonido
+## Current review: water and lava arenas
 
-- `bb test`: 18 pruebas y 111 aserciones; incluye mapa por sala, puntos de aparición/suministro accesibles y choques distintos de jugador y bala en Laboratorio Azul.
-- `bb test-client`: el bundle real carga 20 OGG, cambia el nombre del mapa en HUD, muestra Nova cargada y conserva Canvas finito y sin desbalance de `save`/`restore`.
-- `ARENA_TEST_URL=ws://localhost:8082/ws bb test-network`: 20 clientes en cinco salas; 20 comprobaciones, incluidas cinco de mapa autoritativo. Se usó un servidor temporal en 8082.
-- FFmpeg decodificó los 20 OGG sin error. FFprobe leyó ambos atlas PNG. Los PNG y OGG nuevos coincidieron byte a byte con los ZIP originales; se normalizaron los saltos de línea de las licencias de texto.
+- `bb build`: passed; rebuilt the tracked `public/client.js` bundle.
+- `bb test`: 19 tests and 127 assertions passed, covering room map selection, accessible spawn/drop points, water slowing, lava burns, and arena-specific player/projectile collisions.
+- `bb test-client`: passed against the compiled bundle, including arena selection, HUD title, abilities, reduced motion, and audio controls.
+- `ARENA_TEST_URL=ws://localhost:8082/ws bb test-network`: 20 clients across five rooms; all 20 checks passed, including five authoritative map checks. The temporary server on port 8082 was stopped afterward.
 
 Estas pruebas confirman reglas, carga de recursos y flujo de red. La calidad percibida del arte y del sonido requiere revisión en un navegador con altavoces; no se presume de una evaluación visual ni auditiva con los adaptadores simulados.

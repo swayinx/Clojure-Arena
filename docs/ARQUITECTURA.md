@@ -32,9 +32,25 @@ El enunciado del trabajo final, conservado fuera del repositorio, pide un lengua
 flowchart LR
   subgraph Clientes[Hasta cuatro navegadores por sala]
     A[Teclado y ratón]
-    B[client.cljs\nHUD y predicción]
-    C[view.cljs\nCanvas y audio]
-    A --> B --> C
+    CLIENT[arena.client\nStartup, input, transport, match, prediction, simulation, tick, bindings\nRetains socket and last-message state]
+    STATE[arena.client.state\nShared defonce state atoms]
+    UI[arena.client.ui\nDOM, preferences, notifications, abilities, rooms, invites, HUD, events, QR, copy, fullscreen\nUses an on-join callback; does not require arena.client]
+    VIEW[arena.view\nComposition, floor, players, shots, pickups, ultimates, crosshair, draw\nPreserved public facade]
+    TERRAINVIEW[arena.view.terrain-module\nCached arena floors and animated hazards]
+    CANVAS[arena.view.canvas-module\ncanvas_module.cljs\nInitialization, palette, sprites, primitives, reduced-motion, cap]
+    EFFECTS[arena.view.effects-module\neffects_module.cljs\nSettings, state, audio, particles, events, advance, ghost, effects]
+    A --> CLIENT
+    CLIENT --> STATE
+    CLIENT --> UI
+    CLIENT --> VIEW
+    UI --> STATE
+    UI --> VIEW
+    VIEW --> CANVAS
+    VIEW --> EFFECTS
+    VIEW --> TERRAINVIEW
+    TERRAINVIEW --> CANVAS
+    TERRAINVIEW --> CORE
+    EFFECTS --> CANVAS
   end
   T[Cloudflare Tunnel\nOpcional para Internet]
   subgraph Host[PC anfitriona - servidor Clojure]
@@ -44,16 +60,18 @@ flowchart LR
     R[Agente por sala\nEstado del combate]
     TIMER[Planificador\n25 ms]
     CORE[engine.cljc\nTransiciones puras]
+    MAPS[terrain.cljc\nArena layouts and water/lava hazard bounds]
     HTTP --> P
     P -->|crear / unir / salir| M
     M -->|asignar sala| P
     P -->|input validado| R
     TIMER -->|tick| R
     R --> CORE --> R
+    CORE --> MAPS
     R -->|snapshot idéntico| HTTP
   end
-  B <-->|WS en la misma Wi-Fi| HTTP
-  B <-->|WSS por Internet| T <-->|WS local| HTTP
+  CLIENT <-->|WS en la misma Wi-Fi| HTTP
+  CLIENT <-->|WSS por Internet| T <-->|WS local| HTTP
 ```
 
 Una partida no depende de quién la esté viendo. Todos reciben el estado calculado por la PC anfitriona. La cámara, partículas, sonido y transiciones del HUD son locales y no se envían por la red.
@@ -157,4 +175,4 @@ El jugador local usa predicción y una fracción visual del siguiente paso. Los 
 
 ## Selección de escenario
 
-`engine/arenas` es un mapa inmutable de tres diseños con `:obstacles`, `:spawns` y `:drops`. `engine/world` valida el identificador y lo guarda en `:arena`; `start-round` lo conserva. El servidor recibe `:arena` solo al crear una sala, publica la elección en la lista de salas y snapshots y usa `blocked?` para movimiento y trayectoria de balas. El cliente dibuja ese mismo conjunto de rectángulos y cambia la caché estática de Canvas al cambiar de mapa. Los atlas de terceros se usan solo para presentación: nunca deciden colisiones ni daño.
+`arena.terrain` defines the immutable layouts for Patio Cero, Canales de Agua, and Fractura de Lava, including `:obstacles`, `:spawns`, `:drops`, and `:hazards`. `engine/arenas` and `engine/terrain-at` preserve the engine-facing API. The water bounds slow normal movement to 150 units per second; dashes retain their normal speed. Lava deals 7 damage every 500 ms while occupied and leaves a 1.5-second burn that deals 3 damage every 500 ms after exit. Spawn and dash protection still apply. `engine/world` validates the selected arena, and `start-round` preserves it. The server publishes the choice and authoritatively resolves collisions and damage. The client caches each arena floor and draws animated hazards; art assets never determine collisions or damage.
