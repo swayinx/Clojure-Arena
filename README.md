@@ -4,6 +4,13 @@ Arena de combate para **2–4 jugadores por sala**, con hasta **cinco salas inde
 
 El código de aplicación está en **Clojure y ClojureScript**. La simulación es un núcleo funcional compartido (`.cljc`); el servidor usa **agentes reales de Clojure** y el navegador usa el compilador oficial de ClojureScript y sus colecciones persistentes.
 
+Repositorio: [swayinx/Clojure-Arena](https://github.com/swayinx/Clojure-Arena). Puedes descargar el ZIP desde **Code → Download ZIP**, o clonarlo con Git:
+
+```bash
+git clone https://github.com/swayinx/Clojure-Arena.git
+cd Clojure-Arena
+```
+
 ## 1. Lo mínimo para jugar
 
 **Solo la PC anfitriona instala el proyecto y Babashka.** Las otras PCs abren un enlace en Brave, Chrome, Firefox o Edge con teclado y ratón. No instalan Clojure, Node ni el ZIP.
@@ -214,7 +221,7 @@ Después de actualizar: detén el servidor anterior con Ctrl+C, ejecuta `bb serv
 - [Pruebas realizadas y revisión manual](docs/PRUEBAS.md).
 - [Licencias de dependencias y recursos](docs/RECURSOS.md).
 
-El proyecto se conserva en **Git local**, sin remoto ni publicación en GitHub. Usa `git log --oneline` para ver sus versiones. `.tools/`, `node_modules/`, `build/` y paquetes `dist/` no se versionan. El bundle del navegador sí se versiona para poder ejecutar la entrega sin instalar herramientas de compilación.
+El proyecto conserva su historial en Git y usa [swayinx/Clojure-Arena](https://github.com/swayinx/Clojure-Arena) como repositorio remoto. Usa `git log --oneline` para ver sus versiones. `.tools/`, `node_modules/`, `build/` y paquetes `dist/` no se versionan. El bundle del navegador sí se versiona para poder ejecutar la entrega sin instalar herramientas de compilación.
 
 ## Límites explícitos
 
