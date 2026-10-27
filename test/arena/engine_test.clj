@@ -84,7 +84,7 @@
     (is (some #(= :hit (:kind %)) (:events hit)))))
 
 (deftest arena-layouts-share-authoritative-collision
-  (is (= #{:patio :lab :desierto} (set (keys e/arenas))))
+  (is (= #{:patio :agua :lava} (set (keys e/arenas))))
   (doseq [[id arena] e/arenas]
     (is (every? (fn [[x y]] (not (e/blocked? id x y 16))) (:spawns arena))
         (str id " no bloquea apariciones"))
@@ -94,17 +94,48 @@
       (is (= id (:arena w)))
       (is (= id (get-in w [:players "a" :arena])))))
   (is (= :patio (:arena (e/world :arena 0 :desconocido))))
-  (is (e/blocked? :lab 480 196 16))
-  (is (not (e/blocked? :patio 480 196 16)))
-  (let [start (assoc (e/player "a" "A" "brasa" 0 0) :x 480 :y 150)
+  (is (e/blocked? :agua 400 190 16))
+  (is (not (e/blocked? :patio 400 190 16)))
+  (let [start (assoc (e/player "a" "A" "brasa" 0 0) :x 400 :y 150)
         input (assoc e/empty-input :dy 1)
-        lab (e/move-player (assoc start :arena :lab) input 0.025 2000)
+        water (e/move-player (assoc start :arena :agua) input 0.025 2000)
         patio (e/move-player (assoc start :arena :patio) input 0.025 2000)]
-    (is (= 150 (:y lab)))
+    (is (= 150 (:y water)))
     (is (> (:y patio) 150)))
-  (let [shot {:id 1 :owner "a" :x 420 :y 196 :vx 600 :vy 0 :until 2000}
-        lab (e/advance-shot (assoc (e/world :arena 1000 :lab) :shots []) shot 0.025)
+  (let [shot {:id 1 :owner "a" :x 370 :y 190 :vx 600 :vy 0 :until 2000}
+        water (e/advance-shot (assoc (e/world :arena 1000 :agua) :shots []) shot 0.025)
         patio (e/advance-shot (assoc (e/world :arena 1000 :patio) :shots []) shot 0.025)]
-    (is (empty? (:shots lab)))
+    (is (empty? (:shots water)))
     (is (= 1 (count (:shots patio)))))
-  (is (= :desierto (:arena (e/training "A" "brasa" 0 :desierto)))))
+  (is (= :lava (:arena (e/training "A" "brasa" 0 :lava)))))
+
+(deftest water-slow-and-lava-burn-are-authoritative
+  (doseq [[id arena] e/arenas]
+    (is (every? (fn [[x y]] (nil? (e/terrain-at id x y))) (:spawns arena)))
+    (is (every? (fn [[x y]] (nil? (e/terrain-at id x y))) (:drops arena))))
+  (let [p (assoc (e/player "a" "A" "brasa" 0 0 :agua) :x 250 :y 220)
+        input (assoc e/empty-input :dx 1)
+        slow (e/move-player p input 0.025 2000)
+        normal (e/move-player (assoc p :arena :patio) input 0.025 2000)
+        dash (e/move-player (assoc p :dash-until 2100) input 0.025 2000)]
+    (is (= 3.75 (- (:x slow) (:x p))))
+    (is (= 7.0 (- (:x normal) (:x p))))
+    (is (= 22.5 (- (:x dash) (:x p)))))
+  (let [w (-> (e/world :arena 0 :lava) (e/add-player "a" "A" "brasa")
+              (e/start-round 0) (assoc :time 2000)
+              (assoc-in [:players "a" :x] 320)
+              (assoc-in [:players "a" :y] 220))
+        first-tick (e/apply-terrain w "a")
+        outside (-> first-tick (assoc :time 2500)
+                    (assoc-in [:players "a" :x] 480)
+                    (assoc-in [:players "a" :y] 300))
+        burn-tick (e/apply-terrain outside "a")
+        expired (e/apply-terrain (assoc burn-tick :time 3500) "a")
+        immune (e/apply-terrain (assoc-in w [:players "a" :dash-until] 2200) "a")]
+    (is (= 93 (get-in first-tick [:players "a" :hp])))
+    (is (= 3500 (get-in first-tick [:players "a" :burn-until])))
+    (is (= 90 (get-in burn-tick [:players "a" :hp])))
+    (is (= 90 (get-in expired [:players "a" :hp])))
+    (is (= 100 (get-in immune [:players "a" :hp])))
+    (is (zero? (get-in immune [:players "a" :burn-until])))
+    (is (= 93 (get-in (e/step w {} 0.025 2025) [:players "a" :hp])))))

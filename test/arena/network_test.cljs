@@ -41,7 +41,7 @@
       (.then
         (fn [arr]
           (let [members (vec (array-seq arr)) host (first members)
-                arena (nth [:patio :lab :desierto :lab :patio] index)]
+                arena (nth [:patio :agua :lava :agua :patio] index)]
             (send! host {:type :create :name (str "P" index "-0") :skin "brasa"
                          :room-name (str "Test " index) :arena arena
                          :visibility (if (even? index) :lan :internet)})

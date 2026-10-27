@@ -49,12 +49,13 @@
         mine? (= you player) my-hit? (= you attacker)
         col (case kind :dash "#76f4ce" :shield "#6acfff" :heal "#a2f078" :boost "#ffbe67"
                   :ult (if mine? "#c7a0ff" "#ff817c") :ult-cast (if mine? "#c7a0ff" "#ff817c") :hit (if (pos? absorbed) "#6acfff" "#ffe3a5")
-                  :kill color :pickup "#d9ed91" :wall "#a8c5b9" color)
-        n (case kind :shot 3 :hit 7 :kill 26 :dash 13 :ult 46 :heal 10 :shield 12 :boost 16 :wall 3 :pickup 18 0)
-        radius (case kind :ult 125 :kill 75 :dash 44 :shield 57 :heal 52 :boost 55 :hit 25 :pickup 50 0)
+                  :burn "#ff7043" :kill color :pickup "#d9ed91" :wall "#a8c5b9" color)
+        n (case kind :shot 3 :hit 7 :kill 26 :dash 13 :ult 46 :heal 10 :shield 12 :boost 16 :burn 8 :wall 3 :pickup 18 0)
+        radius (case kind :ult 125 :kill 75 :dash 44 :shield 57 :heal 52 :boost 55 :hit 25 :burn 20 :pickup 50 0)
         text (case kind :hit (if (pos? amount) (str "−" amount) (str "ESCUDO −" absorbed))
                    :heal (str "+" amount) :kill (when my-hit? "+1 BAJA")
                    :pickup (case (:item event) :rapid "RÁFAGA" :scatter "DISPERSOR" :heal "+35 VIDA" :shield "+60 ESCUDO" :energy "+35 NOVA" "MEJORA")
+                   :burn (when mine? "FUEGO")
                    :dodge (when mine? "INMUNE") nil)]
     (when (or mine? my-hit? (= kind :ult) (= kind :ult-cast)) (sound! kind))
     (cond-> fx
@@ -99,12 +100,11 @@
                  (update :ghost-times #(reduce (fn [m g] (assoc m (:id g) now)) % ghosts)))))))
 
 (def floor-cache (atom nil))
-(def map-art
-  (into {} (for [[id file] [[:lab "lab-tileset.png"] [:desierto "desert-tilemap.png"]]]
-             (let [im (js/Image.)]
-               (set! (.-onload im) #(reset! floor-cache nil))
-               (set! (.-src im) (str "art/" file))
-               [id im]))))
+(def elemental-art
+  (let [im (js/Image.)]
+    (set! (.-onload im) #(reset! floor-cache nil))
+    (set! (.-src im) "art/elemental-tiles.png")
+    im))
 (defn paint-patio! []
   (rect -12 -12 984 624 "#0c171d")
   (polygon [[40 15] [920 15] [945 40] [945 560] [920 585] [40 585] [15 560] [15 40]] "#34484a")
@@ -170,23 +170,42 @@
     (rect (+ x 7) (+ y 6) 4 3 "#c8e299") (rect (+ x w -11) (+ y 6) 4 3 "#c8e299")))
 
 (defn paint-variant! [arena]
-  (let [lab? (= arena :lab)
-        base (if lab? "#102536" "#4a302c")
-        border (if lab? "#69a8c7" "#e4b275")
-        seam (if lab? "#93c9da27" "#f7cd9129")
-        im (get map-art arena)
+  (let [agua? (= arena :agua)
+        base (if agua? "#0e222a" "#211214")
+        border (if agua? "#40a0c0" "#e05530")
+        seam (if agua? "#2a586829" "#6a241629")
+        im elemental-art
         image? (and im (.-complete im) (pos? (.-naturalWidth im)))
-        [sx sy size] (if lab? [0 128 32] [0 51 16])]
-    (rect 0 0 960 600 (if lab? "#081522" "#271c22"))
-    (rect 24 24 912 552 (if lab? "#2b5268" "#986a56"))
+        [sx sy size] (if agua? [0 0 16] [48 0 16])]
+    (rect 0 0 960 600 (if agua? "#081318" "#180a0a"))
+    (rect 24 24 912 552 (if agua? "#183842" "#421612"))
     (rect 40 40 880 520 base)
-    ;; El atlas original se repite en la caché estática; el motor define las colisiones.
     (when image?
       (doseq [x (range 40 920 32) y (range 40 560 32)]
         (.drawImage ctx im sx sy size size x y 32 32)))
-    (rect 40 40 880 520 (if lab? "#0a223088" "#613e3050"))
+    (rect 40 40 880 520 (if agua? "#0a202866" "#30100c50"))
     (doseq [x (range 40 921 32)] (line x 40 x 560 seam 1))
     (doseq [y (range 40 561 32)] (line 40 y 920 y seam 1))
+    ;; Base estática de zonas de peligro
+    (doseq [{:keys [x y w h kind]} (get-in e/arenas [arena :hazards])]
+      (if (= kind :water)
+        (do
+          (rect x y w h "#0a2638")
+          (rect (+ x 2) (+ y 2) (- w 4) (- h 4) "#10425c")
+          (doseq [i (range (+ x 6) (+ x w -6) 16)]
+            (line i (+ y 3) i (+ y h -3) "#19597a44" 1))
+          (rect x y w 2 "#3892b8")
+          (rect x (+ y h -2) w 2 "#0a2638")
+          (rect x y 2 h "#206e90")
+          (rect (+ x w -2) y 2 h "#206e90"))
+        (do
+          (rect x y w h "#3a0e08")
+          (rect (+ x 2) (+ y 2) (- w 4) (- h 4) "#681c0d")
+          (rect (+ x 5) (+ y 5) (- w 10) (- h 10) "#942f12")
+          (rect x y w 2 "#ff5722")
+          (rect x (+ y h -2) w 2 "#3a0e08")
+          (rect x y 2 h "#bd3612")
+          (rect (+ x w -2) y 2 h "#bd3612"))))
     (doseq [[x y] (get-in e/arenas [arena :spawns])]
       (ring x y 32 (str border "66") 2)
       (doseq [i (range 4)]
@@ -195,17 +214,17 @@
                 (+ x (* 37 (e/cos a))) (+ y (* 37 (e/sin a))) border 2))))
     (ring 480 300 77 (str border "32") 2)
     (ring 480 300 61 (str border "22") 1)
-    (label (if lab? "LAB / 02" "DESIERTO / 03") 480 300 (str border "44") 15)
+    (label (if agua? "CANALES / 02" "FRACTURA / 03") 480 300 (str border "44") 15)
     (doseq [{:keys [x y w h]} (get-in e/arenas [arena :obstacles])]
       (rect (+ x 6) (+ y 8) w h "#08131ba0")
-      (rect x y w h (if lab? "#24465b" "#62443d"))
-      (rect (+ x 4) (+ y 4) (- w 8) (- h 8) (if lab? "#467089" "#bc8162"))
+      (rect x y w h (if agua? "#1b3c48" "#4d1d16"))
+      (rect (+ x 4) (+ y 4) (- w 8) (- h 8) (if agua? "#2f6070" "#843022"))
       (when image?
-        (let [[cx cy cs] (if lab? [272 80 32] [0 170 16])]
+        (let [[cx cy cs] (if agua? [16 16 16] [64 16 16])]
           (doseq [xx (range (+ x 6) (+ x w -16) 24)]
             (.drawImage ctx im cx cy cs cs xx (+ y 6) 24 (- h 14)))))
       (rect x y w 4 border)
-      (rect x (+ y h -5) w 5 (if lab? "#142b3d" "#48302a"))
+      (rect x (+ y h -5) w 5 (if agua? "#10262e" "#30120d"))
       (doseq [xx (range (+ x 10) (+ x w -8) 18)]
         (line xx (+ y h -11) (+ xx 7) (+ y h -5) (str border "99") 2)))
     (doseq [x [24 932] y [90 450]] (rect x y 4 50 border))))
@@ -218,6 +237,35 @@
       (.drawImage (.getContext copy "2d") canvas 0 0)
       (reset! floor-cache {:arena arena :canvas copy}))))
 
+(defn draw-hazards! [arena-key now]
+  (let [hazards (get-in e/arenas [(e/arena-id arena-key) :hazards])
+        animated? (and (not (reduced-motion?)) (= :full (:particles @settings)))]
+    (doseq [{:keys [x y w h kind]} hazards]
+      (case kind
+        :water
+        (do
+          (.save ctx)
+          (rect x y w h "#1b628238")
+          (when animated?
+            (doseq [yy (range (+ y 12) (+ y h -10) 18)]
+              (let [wave (* 5 (e/sin (+ (* now 0.004) (/ (+ x yy) 25))))]
+                (line (+ x 8) (+ yy wave) (+ x w -8) (+ yy wave) "#4ac2ea33" 1.5))))
+          (.restore ctx))
+        :lava
+        (let [glow (+ 0.7 (* 0.2 (e/sin (+ (* now 0.005) (/ y 30)))))]
+          (.save ctx)
+          (set! (.-globalAlpha ctx) glow)
+          (rect x y w h "#e64a1930")
+          (rect (+ x 4) (+ y 4) (- w 8) (- h 8) "#ff980022")
+          (when animated?
+            (doseq [i (range 4)]
+              (let [bx (+ x 15 (mod (+ (* i 47) (* now 0.015)) (- w 30)))
+                    by (+ y 12 (mod (+ (* i 31) (* now 0.008)) (- h 24)))
+                    bubble-r (+ 2 (* 1.5 (e/sin (+ (* now 0.01) i))))]
+                (circle bx by bubble-r "#ffeb3b80"))))
+          (.restore ctx))
+        nil))))
+
 (defn draw-ambient! [arena now]
   (let [animated? (and (not (reduced-motion?)) (= :full (:particles @settings)))
         pulse (if animated? (+ 0.45 (* 0.15 (e/sin (/ now 1500)))) 0.45)]
@@ -226,16 +274,17 @@
       (arc 480 300 68 a (+ a 1.15) "#7dbcb0" 2))
     (doseq [x [20 937] y [110 430] :when (= arena :patio)] (rect x y 3 60 "#8fcac8"))
     (.restore ctx)
-    ;; Doce motas deterministas; sin añadir entidades al servidor.
+    ;; Motas y chispas ambientales según el mapa
     (when animated?
       (doseq [i (range 12)]
         (let [x (+ 58 (mod (+ (* i 137) (* now 0.003)) 844))
               y (+ 56 (mod (- (* i 83) (* now 0.006)) 488))]
-          (rect x y 1.5 1.5 (case arena :desierto "#ffd8a71e" :lab "#a8ddf522" "#b5d9c51c"))))
+          (rect x y 1.5 1.5 (case arena :lava "#ff8a6533" :agua "#80deea33" "#b5d9c51c"))))
       (doseq [x [74 886] y [210 368]]
         (let [age (mod (+ now (* x 5)) 2800)]
           (.save ctx) (set! (.-globalAlpha ctx) (* 0.09 (e/sin (* e/pi (/ age 2800)))))
-          (circle (+ x (* 5 (e/sin (/ age 800)))) (- y (/ age 80)) (+ 5 (/ age 260)) "#b0d6d3")
+          (circle (+ x (* 5 (e/sin (/ age 800)))) (- y (/ age 80)) (+ 5 (/ age 260))
+                  (case arena :lava "#ff7043" :agua "#80deea" "#b0d6d3"))
           (.restore ctx))))))
 
 (defn draw-pickups! [world now]
@@ -420,6 +469,14 @@
           (arc x y 43 (- (/ e/pi 2)) (+ (- (/ e/pi 2)) (* (/ (:shield p) 60) 2 e/pi)) "#6acfff" 2))
         (.restore ctx))
       (when hurt? (arc x y 35 (+ angle 2.2) (+ angle 4.1) "#ff817c" 3))
+      (when (< now (:burn-until p 0))
+        (let [flame-flicker (* 3 (e/sin (+ (* fx-now 0.02) (* x 0.1))))]
+          (.save ctx) (set! (.-globalAlpha ctx) 0.85)
+          (circle (+ x flame-flicker) (- y 10) 8 "#ff5722cc")
+          (circle (- x flame-flicker) (- y 15) 5 "#ffeb3baa")
+          (.restore ctx)))
+      (when (= :water (e/terrain-at (:arena p) (:x p) (:y p)))
+        (ring x (+ y 20) (+ 8 (* 4 (e/sin (* fx-now 0.01)))) "#6ad4ff55" 1.5))
       (let [name (if mine? "TÚ" (:name p))]
         (label name x (- y 46) (if mine? "#e8f7b9" color) 9))
       (rect (- x 22) (+ y 33) 44 4 "#0a161d")
@@ -472,6 +529,7 @@
                     (* mag 0.5 (+ (e/cos (* fx-now 0.052)) (e/cos (* fx-now 0.083))))))
   (.drawImage ctx (:canvas @floor-cache) 0 0)
   (draw-ambient! (:arena world) fx-now)
+  (draw-hazards! (:arena world) fx-now)
   (draw-pickups! world now) (draw-ultimates! world you now) (draw-ghosts! fx-now)
   (doseq [p (sort-by :y (vals (:players world)))] (draw-player! p you now fx-now))
   (draw-shots! world you) (draw-effects! fx-now)
