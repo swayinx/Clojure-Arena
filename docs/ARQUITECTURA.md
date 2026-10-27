@@ -4,7 +4,7 @@
 
 **Clojure Arena** es una arena PvP: hasta cuatro jugadores compiten por eliminaciones en rondas de tres minutos. Una PC hospeda hasta cinco salas. El entrenamiento funciona en el navegador con el mismo motor de reglas, usando tres sentinelas.
 
-El PDF `TRABAJO FINAL (1).pdf` pide un lenguaje funcional, cuatro jugadores simultáneos, datos inmutables, funciones puras, agentes/actores, mensajes y visualización en tiempo real. También solicita código con instrucciones y un informe con diagrama, concurrencia y principales funciones.
+El enunciado del trabajo final, conservado fuera del repositorio, pide un lenguaje funcional, cuatro jugadores simultáneos, datos inmutables, funciones puras, agentes/actores, mensajes y visualización en tiempo real. También solicita código con instrucciones y un informe con diagrama, concurrencia y principales funciones.
 
 ## Correspondencia verificable
 

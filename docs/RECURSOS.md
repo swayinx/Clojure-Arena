@@ -42,7 +42,7 @@ fe33197a3e0e8ca9d2c52c3b4413f216ca309a0d67b4cdffe919c236c7f19f0a
 
 No se emplean CDNs en el juego: fuentes, sprites, estilos, bundle y QR se sirven desde la PC anfitriona. Las conexiones externas son opcionales para descargar herramientas o crear el túnel.
 
-Los PDFs académicos se conservan como material proporcionado para el trabajo; no se les atribuye una licencia abierta. La publicación del repositorio no cambia los derechos sobre esos documentos.
+Los PDFs académicos originales se conservan solo en la PC de trabajo y se excluyen del repositorio y de su historial. No se les atribuye una licencia abierta.
 
 ## Audio de combate: autor, procedencia y licencia
 
