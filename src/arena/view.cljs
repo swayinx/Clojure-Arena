@@ -1,102 +1,40 @@
 (ns arena.view
-  "Presentación: Canvas y audio. Los efectos visuales no modifican la simulación."
-  (:require [arena.engine :as e] [arena.audio :as audio] [arena.presentation :as visual]))
+  "Presentation facade for canvas rendering and visual effects."
+  (:require [arena.engine :as e]
+            [arena.presentation :as visual]
+            [arena.view.canvas-module :as cv]
+            [arena.view.effects-module :as fx]))
 
-(def palette {"brasa" "#ff9474" "chispa" "#76e5d1" "mora" "#c6a2ff" "bastion" "#f6ce78"})
-(def canvas (.getElementById js/document "arena"))
-(def ctx (.getContext canvas "2d" #js {:alpha false}))
-(def motion (.matchMedia js/window "(prefers-reduced-motion: reduce)"))
-(defonce settings (atom {:shake 0.45 :particles :full :sound true :volume 0.65}))
-(defonce effects (atom {:particles [] :rings [] :texts [] :ghosts [] :last-event 0 :shake 0 :hit-at -1000 :kill-at -1000}))
-(defonce poses (atom {}))
-(def sprites (into {} (map (fn [skin] (let [im (js/Image.)] (set! (.-src im) (str "art/" skin ".svg")) [skin im])) e/skins)))
-(defn reduced-motion? [] (.-matches motion))
-(defn cap [v n] (vec (take-last n v)))
-(defn rect [x y w h color] (set! (.-fillStyle ctx) color) (.fillRect ctx x y w h))
-(defn line [x y xx yy color width]
-  (set! (.-strokeStyle ctx) color) (set! (.-lineWidth ctx) width)
-  (.beginPath ctx) (.moveTo ctx x y) (.lineTo ctx xx yy) (.stroke ctx))
-(defn circle [x y r color]
-  (set! (.-fillStyle ctx) color) (.beginPath ctx) (.arc ctx x y (max 0 r) 0 (* 2 e/pi)) (.fill ctx))
-(defn ring [x y r color width]
-  (set! (.-strokeStyle ctx) color) (set! (.-lineWidth ctx) width)
-  (.beginPath ctx) (.arc ctx x y (max 0 r) 0 (* 2 e/pi)) (.stroke ctx))
-(defn arc [x y r from to color width]
-  (set! (.-strokeStyle ctx) color) (set! (.-lineWidth ctx) width)
-  (.beginPath ctx) (.arc ctx x y r from to) (.stroke ctx))
-(defn label [s x y color size]
-  (set! (.-font ctx) (str "700 " size "px Mono"))
-  (set! (.-textAlign ctx) "center") (set! (.-fillStyle ctx) color) (.fillText ctx s x y))
-(defn polygon [pts color]
-  (.beginPath ctx) (.moveTo ctx (ffirst pts) (second (first pts)))
-  (doseq [[x y] (rest pts)] (.lineTo ctx x y))
-  (.closePath ctx) (set! (.-fillStyle ctx) color) (.fill ctx))
-
-(defn resume-audio! []
-  (audio/resume! (:sound @settings) (:volume @settings)))
-(defn sound! [kind] (audio/play! kind (:sound @settings)))
-(defn ultimate-ready! [] (sound! :ult-ready))
-(defn reset!fx [] (reset! poses {}) (reset! effects {:particles [] :rings [] :texts [] :ghosts [] :last-event 0 :shake 0 :hit-at -1000 :kill-at -1000}))
-(defn particle-burst [x y n speed color now angle spread]
-  (let [count (if (or (reduced-motion?) (= :low (:particles @settings))) (max 2 (quot n 3)) n)]
-    (mapv (fn [i]
-            (let [a (+ angle (* spread (- (* 2 (js/Math.random)) 1))) v (* speed (+ 0.35 (* 0.65 (js/Math.random))))]
-              {:x x :y y :vx (* (e/cos a) v) :vy (* (e/sin a) v) :color color
-               :size (+ 1.2 (* 2 (js/Math.random))) :born now :until (+ now 240 (* i 9))})) (range count))))
-(defn event-fx [fx event world you now]
-  (let [{:keys [kind x y player attacker amount absorbed angle]} event
-        color (get palette (get-in world [:players player :skin]) "#d9ed91")
-        mine? (= you player) my-hit? (= you attacker)
-        col (case kind :dash "#76f4ce" :shield "#6acfff" :heal "#a2f078" :boost "#ffbe67"
-                  :ult (if mine? "#c7a0ff" "#ff817c") :ult-cast (if mine? "#c7a0ff" "#ff817c") :hit (if (pos? absorbed) "#6acfff" "#ffe3a5")
-                  :kill color :pickup "#d9ed91" :wall "#a8c5b9" color)
-        n (case kind :shot 3 :hit 7 :kill 26 :dash 13 :ult 46 :heal 10 :shield 12 :boost 16 :wall 3 :pickup 18 0)
-        radius (case kind :ult 125 :kill 75 :dash 44 :shield 57 :heal 52 :boost 55 :hit 25 :pickup 50 0)
-        text (case kind :hit (if (pos? amount) (str "−" amount) (str "ESCUDO −" absorbed))
-                   :heal (str "+" amount) :kill (when my-hit? "+1 BAJA")
-                   :pickup (case (:item event) :rapid "RÁFAGA" :scatter "DISPERSOR" :heal "+35 VIDA" :shield "+60 ESCUDO" :energy "+35 NOVA" "MEJORA")
-                   :dodge (when mine? "INMUNE") nil)]
-    (when (or mine? my-hit? (= kind :ult) (= kind :ult-cast)) (sound! kind))
-    (cond-> fx
-      (and player (contains? #{:shot :hit} kind)) (assoc-in [:cues player kind] now)
-      (and x y (pos? n)) (update :particles #(cap (into % (particle-burst x y n (if (= kind :ult) 340 210) col now (or angle 0) (if (= kind :shot) 0.3 e/pi))) 160))
-      (and x y (pos? radius)) (update :rings #(cap (conj % {:x x :y y :color col :max radius :born now :until (+ now (if (= kind :ult) 900 360)) :kind kind}) 40))
-      (and x y text) (update :texts #(cap (conj % {:x x :y (- y 36) :text text :color col :born now :until (+ now 850)}) 24))
-      (and my-hit? (= kind :hit)) (assoc :hit-at now)
-      (and my-hit? (= kind :kill)) (assoc :kill-at now :shake 6)
-      (and mine? (= kind :hit) (pos? amount)) (assoc :shake 4)
-      (= kind :ult) (assoc :shake 10))))
-
-(defn consume! [world you now]
-  (let [events (filter #(> (:id %) (:last-event @effects)) (:events world))]
-    (when (seq events)
-      (swap! effects (fn [fx] (assoc (reduce #(event-fx %1 %2 world you now) fx events)
-                                    :last-event (:event-seq world)))))))
-(defn advance-effects! [dt now world game-now]
-  (swap! poses
-         (fn [old]
-           (into {} (for [[id p] (:players world) :when (:alive p)]
-                      (let [last (get old id) same? (= (:spawn-until p) (:spawn last))
-                            distance (if (and last same?) (min 20 (e/distance (:x p) (:y p) (:x last) (:y last))) 0)
-                            dash? (< game-now (:dash-until p))]
-                        [id {:x (:x p) :y (:y p) :spawn (:spawn-until p)
-                             :appeared (if same? (:appeared last now) now)
-                             :gait (+ (if same? (:gait last 0) 0) (if dash? 0 (/ distance 18)))
-                             :walk (visual/damp (:walk last 0) (if (:moving p) 1 0) 18 dt)
-                             :dash (visual/damp (:dash last 0) (if dash? 1 0) 28 dt)
-                             :shield (visual/damp (:shield last 0) (if (pos? (:shield p)) 1 0) 22 dt)}])))))
-  (swap! effects
-         (fn [fx]
-           (let [ghosts (for [[id p] (:players world) :when (and (:alive p) (< game-now (:dash-until p))
-                                                 (> (- now (get-in fx [:ghost-times id] 0)) (if (reduced-motion?) 75 32)))]
-                          {:x (:x p) :y (:y p) :skin (:skin p) :angle (:angle p) :born now :until (+ now 210) :id id})]
-             (-> fx
-                 (assoc :shake (visual/damp (:shake fx) 0 9 dt))
-                 (update :particles #(mapv (fn [p] (visual/drift p dt)) (filter (fn [p] (> (:until p) now)) %)))
-                 (update :rings #(filterv (fn [r] (> (:until r) now)) %))
-                 (update :texts #(filterv (fn [r] (> (:until r) now)) %))
-                 (update :ghosts #(cap (into (filterv (fn [g] (> (:until g) now)) %) ghosts) 28))
-                 (update :ghost-times #(reduce (fn [m g] (assoc m (:id g) now)) % ghosts)))))))
+;; Re-export the complete original arena.view API.
+(def palette cv/palette)
+(def canvas cv/canvas)
+(def ctx cv/ctx)
+(def motion cv/motion)
+(def settings fx/settings)
+(def effects fx/effects)
+(def poses fx/poses)
+(def sprites (cv/initialize-sprites!))
+(def reduced-motion? cv/reduced-motion?)
+(def cap cv/cap)
+(def rect cv/rect)
+(def line cv/line)
+(def circle cv/circle)
+(def ring cv/ring)
+(def arc cv/arc)
+(def label cv/label)
+(def polygon cv/polygon)
+(def resume-audio! fx/resume-audio!)
+(def sound! fx/sound!)
+(def ultimate-ready! fx/ultimate-ready!)
+(def reset!fx fx/reset!fx)
+(def particle-burst fx/particle-burst)
+(def event-fx fx/event-fx)
+(def consume! fx/consume!)
+(def advance-effects! fx/advance-effects!)
+(def draw-ambient! fx/draw-ambient!)
+(def nova-burst! fx/nova-burst!)
+(def draw-ghosts! fx/draw-ghosts!)
+(def draw-effects! fx/draw-effects!)
 
 (def floor-cache (atom nil))
 (def map-art
@@ -114,7 +52,7 @@
   (doseq [y (range 44 557 44)] (line 44 y 916 y "#abcfc909" 1))
   (doseq [[x y] [[44 44] [696 44] [44 424] [696 424]]]
     (rect x y 220 132 "#9acbb203") (line x (+ y 132) (+ x 220) (+ y 132) "#8fc6b615" 1))
-  ;; Paneles, drenajes y rutas pintadas: se rasterizan una sola vez.
+  ;; Panels, drains, and painted routes are rasterized once.
   (doseq [x (range 68 900 88) y (range 66 540 88)]
     (line x y (+ x 28) y "#aecfc310" 1)
     (rect (+ x 30) (- y 1) 2 2 "#8baca922"))
@@ -168,7 +106,6 @@
       (polygon [[(+ x 8 offset) (+ y h -12)] [(+ x 14 offset) (+ y h -12)]
                 [(+ x 21 offset) (+ y h -5)] [(+ x 15 offset) (+ y h -5)]] "#d3b86b80"))
     (rect (+ x 7) (+ y 6) 4 3 "#c8e299") (rect (+ x w -11) (+ y 6) 4 3 "#c8e299")))
-
 (defn paint-variant! [arena]
   (let [lab? (= arena :lab)
         base (if lab? "#102536" "#4a302c")
@@ -180,7 +117,7 @@
     (rect 0 0 960 600 (if lab? "#081522" "#271c22"))
     (rect 24 24 912 552 (if lab? "#2b5268" "#986a56"))
     (rect 40 40 880 520 base)
-    ;; El atlas original se repite en la caché estática; el motor define las colisiones.
+    ;; The original atlas repeats in the static cache; the engine defines collisions.
     (when image?
       (doseq [x (range 40 920 32) y (range 40 560 32)]
         (.drawImage ctx im sx sy size size x y 32 32)))
@@ -209,7 +146,6 @@
       (doseq [xx (range (+ x 10) (+ x w -8) 18)]
         (line xx (+ y h -11) (+ xx 7) (+ y h -5) (str border "99") 2)))
     (doseq [x [24 932] y [90 450]] (rect x y 4 50 border))))
-
 (defn cache-floor! [arena]
   (when (not= arena (:arena @floor-cache))
     (if (= arena :patio) (paint-patio!) (paint-variant! arena))
@@ -217,27 +153,6 @@
       (set! (.-width copy) 960) (set! (.-height copy) 600)
       (.drawImage (.getContext copy "2d") canvas 0 0)
       (reset! floor-cache {:arena arena :canvas copy}))))
-
-(defn draw-ambient! [arena now]
-  (let [animated? (and (not (reduced-motion?)) (= :full (:particles @settings)))
-        pulse (if animated? (+ 0.45 (* 0.15 (e/sin (/ now 1500)))) 0.45)]
-    (.save ctx) (set! (.-globalAlpha ctx) pulse)
-    (doseq [a [0 e/pi] :when (= arena :patio)]
-      (arc 480 300 68 a (+ a 1.15) "#7dbcb0" 2))
-    (doseq [x [20 937] y [110 430] :when (= arena :patio)] (rect x y 3 60 "#8fcac8"))
-    (.restore ctx)
-    ;; Doce motas deterministas; sin añadir entidades al servidor.
-    (when animated?
-      (doseq [i (range 12)]
-        (let [x (+ 58 (mod (+ (* i 137) (* now 0.003)) 844))
-              y (+ 56 (mod (- (* i 83) (* now 0.006)) 488))]
-          (rect x y 1.5 1.5 (case arena :desierto "#ffd8a71e" :lab "#a8ddf522" "#b5d9c51c"))))
-      (doseq [x [74 886] y [210 368]]
-        (let [age (mod (+ now (* x 5)) 2800)]
-          (.save ctx) (set! (.-globalAlpha ctx) (* 0.09 (e/sin (* e/pi (/ age 2800)))))
-          (circle (+ x (* 5 (e/sin (/ age 800)))) (- y (/ age 80)) (+ 5 (/ age 260)) "#b0d6d3")
-          (.restore ctx))))))
-
 (defn draw-pickups! [world now]
   (doseq [{:keys [x y kind land-at until]} (:pickups world)]
     (let [fall (e/clamp (/ (- land-at now) 1000) 0 1)
@@ -265,7 +180,6 @@
         :scatter (doseq [yy [-5 0 5]] (line -5 0 6 yy color 2)))
       (.restore ctx)
       (when (<= fall 0) (label name x (+ y 32) color 8)))))
-
 (defn draw-ultimates! [world you now]
   (doseq [[id p] (:players world) :when (and (:alive p) (> (:ult-at p) now))]
     (let [{:keys [x y]} (:ult-target p)
@@ -273,7 +187,7 @@
           color (if (= id you) "#c7a0ff" "#ff817c")
           spin (if (reduced-motion?) 0 (* progress 1.8))
           inward (- 125 (* 98 progress))]
-      ;; El borde fijo muestra el área real; las chispas convergen antes del impacto.
+      ;; The fixed border shows the actual area; sparks converge before impact.
       (circle x y 125 (str color "12"))
       (ring x y 125 (str color "85") 2)
       (ring x y 117 (str color "2d") 9)
@@ -299,32 +213,6 @@
       (.restore ctx)
       (label (str (if (= id you) "TU NOVA " "PELIGRO ") (.toFixed (/ (- (:ult-at p) now) 1000) 1))
              x (e/clamp (- y 138) 22 574) color 11))))
-
-(defn nova-burst! [r progress]
-  (let [{:keys [x y color]} r
-        ease (- 1 (js/Math.pow (- 1 progress) 4))
-        radius (* 125 ease)
-        flash (max 0 (- 1 (* progress 5)))
-        spin (if (reduced-motion?) 0 (* progress 0.4))]
-    ;; Destello localizado, frente expansivo y residuos. Nunca flash de pantalla.
-    (circle x y 125 (str color "0c"))
-    (circle x y radius (str color "28"))
-    (ring x y radius color (max 1 (* 9 (- 1 progress))))
-    (ring x y (* radius 0.79) "#f5eaff" (max 1 (* 4 (- 1 progress))))
-    (ring x y 125 (str color "66") 2)
-    (doseq [i (range 12)]
-      (let [a (+ spin (* i (/ e/pi 6)))
-            inner (* radius (+ 0.58 (* 0.28 progress)))]
-        (line (+ x (* inner (e/cos a))) (+ y (* inner (e/sin a)))
-              (+ x (* radius (e/cos a))) (+ y (* radius (e/sin a))) color 3)
-        (circle (+ x (* radius (e/cos a))) (+ y (* radius (e/sin a)))
-                (* 3 (- 1 progress)) "#fff5ff")))
-    (when (pos? flash)
-      (.save ctx) (set! (.-globalAlpha ctx) (* flash (if (reduced-motion?) 0.3 0.85)))
-      (circle x y (+ 10 (* 28 flash)) "#fff5ff")
-      (polygon [[(- x 9) y] [(- x 3) (- y 155)] [(+ x 3) (- y 155)] [(+ x 9) y]] color)
-      (.restore ctx))))
-
 (defn draw-shots! [world you]
   (doseq [s (:shots world)]
     (let [mine? (= you (:owner s)) c (if mine? (if (:boosted s) "#ffbd68" "#daef9a") "#ff827b")
@@ -334,14 +222,6 @@
       (line (- x (* len (e/cos a))) (- y (* len (e/sin a))) x y (str c "25") 9)
       (line (- x (* len (e/cos a))) (- y (* len (e/sin a))) x y c 3)
       (circle x y 3.5 "#fff8df"))))
-
-(defn draw-ghosts! [now]
-  (doseq [g (:ghosts @effects)]
-    (let [im (get sprites (:skin g))]
-      (when (and im (.-complete im) (pos? (.-naturalWidth im)))
-        (.save ctx) (set! (.-globalAlpha ctx) (* 0.38 (e/clamp (/ (- (:until g) now) 210) 0 1)))
-        (.drawImage ctx im 160 0 32 32 (- (:x g) 38) (- (:y g) 45) 76 76) (.restore ctx)))))
-
 (defn draw-player! [p you now fx-now]
   (when (:alive p)
     (let [{:keys [x y angle skin]} p im (get sprites skin) color (get palette skin)
@@ -389,7 +269,7 @@
       (when (or dash? spawning?)
         (ring x y 34 (if dash? "#b9ffe7" "#badca15f") 2)
         (when dash? (line (- x (* 38 (get-in p [:dash-dir :dx]))) (- y (* 38 (get-in p [:dash-dir :dy]))) x y "#76f4ce55" 9)))
-      ;; Cuerpo y piernas animados; el arma apunta de forma independiente.
+      ;; The body and legs animate; the weapon aims independently.
       (when (and im (.-complete im) (pos? (.-naturalWidth im)))
         (.save ctx) (.translate ctx (- x (* recoil (e/cos angle))) (- (+ y bob) (* recoil (e/sin angle))))
         (.rotate ctx (* 0.025 stride))
@@ -426,26 +306,6 @@
       (rect (- x 21) (+ y 34) (* 42 (/ (:hp p) 100)) 2 (if mine? "#c5e79b" "#f29885"))
       (when (and mine? (> (get-in p [:cooldowns :dash]) now))
         (rect (- x 21) (+ y 39) (* 42 (- 1 (/ (- (get-in p [:cooldowns :dash]) now) 2500))) 2 "#76f4ce")))))
-
-(defn draw-effects! [now]
-  (doseq [r (:rings @effects)]
-    (let [progress (e/clamp (/ (- now (:born r)) (- (:until r) (:born r))) 0 1)
-          ease (- 1 (js/Math.pow (- 1 progress) 3)) radius (* (:max r) ease)]
-      (.save ctx) (set! (.-globalAlpha ctx) (- 1 progress))
-      (if (= :ult (:kind r))
-        (nova-burst! r progress)
-        (ring (:x r) (:y r) radius (:color r) 2))
-      (.restore ctx)))
-  (doseq [p (:particles @effects)]
-    (.save ctx) (set! (.-globalAlpha ctx) (e/clamp (/ (- (:until p) now) 260) 0 1))
-    (line (:x p) (:y p) (- (:x p) (* (:vx p) 0.035)) (- (:y p) (* (:vy p) 0.035)) (:color p) (:size p))
-    (.restore ctx))
-  (doseq [t (:texts @effects)]
-    (let [age (- now (:born t)) y (- (:y t) (* 32 (- 1 (js/Math.pow (- 1 (e/clamp (/ age 850) 0 1)) 3))))]
-      (.save ctx) (set! (.-globalAlpha ctx) (min 1 (/ (- (:until t) now) 200)))
-      (label (:text t) (+ (:x t) 1) (+ y 1) "#09161f" 12)
-      (label (:text t) (:x t) y (:color t) 12) (.restore ctx))))
-
 (defn crosshair! [world you mouse now fx-now]
   (let [{:keys [x y]} mouse p (get-in world [:players you])
         recent-hit? (< (- fx-now (:hit-at @effects)) 140)
@@ -459,11 +319,10 @@
       (doseq [[dx dy] [[-1 -1] [1 1] [-1 1] [1 -1]]]
         (line (+ x (* 13 dx)) (+ y (* 13 dy)) (+ x (* 18 dx)) (+ y (* 18 dy)) (if recent-kill? "#ffdc83" "#fff") 2)))
     (when nova? (label "F" (+ x 19) (+ y 22) "#d2b3ff" 9))))
-
 (defn draw! [world you mouse now dt fx-now]
   (advance-effects! dt fx-now world now)
   (set! (.-imageSmoothingEnabled ctx) false)
-  ;; Crear fuera de la cámara; después solo un blit por fotograma.
+  ;; Build outside the viewport, then blit once per frame.
   (cache-floor! (e/arena-id (:arena world)))
   (rect 0 0 960 600 "#102027")
   (.save ctx)
@@ -476,7 +335,7 @@
   (doseq [p (sort-by :y (vals (:players world)))] (draw-player! p you now fx-now))
   (draw-shots! world you) (draw-effects! fx-now)
   (.restore ctx)
-  ;; Retícula y HUD no tiemblan; el apuntado conserva coordenadas del mundo.
+  ;; The crosshair and HUD do not shake; aiming keeps world coordinates.
   (when (get-in world [:players you :alive]) (crosshair! world you mouse now fx-now))
   (let [hp (get-in world [:players you :hp] 100)]
     (when (and (< hp 30) (pos? hp))

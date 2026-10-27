@@ -32,9 +32,21 @@ El enunciado del trabajo final, conservado fuera del repositorio, pide un lengua
 flowchart LR
   subgraph Clientes[Hasta cuatro navegadores por sala]
     A[Teclado y ratón]
-    B[client.cljs\nHUD y predicción]
-    C[view.cljs\nCanvas y audio]
-    A --> B --> C
+    CLIENT[arena.client\nStartup, input, transport, match, prediction, simulation, tick, bindings\nRetains socket and last-message state]
+    STATE[arena.client.state\nShared defonce state atoms]
+    UI[arena.client.ui\nDOM, preferences, notifications, abilities, rooms, invites, HUD, events, QR, copy, fullscreen\nUses an on-join callback; does not require arena.client]
+    VIEW[arena.view\nComposition, floor, players, shots, pickups, ultimates, crosshair, draw\nPreserved public facade]
+    CANVAS[arena.view.canvas-module\ncanvas_module.cljs\nInitialization, palette, sprites, primitives, reduced-motion, cap]
+    EFFECTS[arena.view.effects-module\neffects_module.cljs\nSettings, state, audio, particles, events, advance, ghost, effects]
+    A --> CLIENT
+    CLIENT --> STATE
+    CLIENT --> UI
+    CLIENT --> VIEW
+    UI --> STATE
+    UI --> VIEW
+    VIEW --> CANVAS
+    VIEW --> EFFECTS
+    EFFECTS --> CANVAS
   end
   T[Cloudflare Tunnel\nOpcional para Internet]
   subgraph Host[PC anfitriona - servidor Clojure]
@@ -52,8 +64,8 @@ flowchart LR
     R --> CORE --> R
     R -->|snapshot idéntico| HTTP
   end
-  B <-->|WS en la misma Wi-Fi| HTTP
-  B <-->|WSS por Internet| T <-->|WS local| HTTP
+  CLIENT <-->|WS en la misma Wi-Fi| HTTP
+  CLIENT <-->|WSS por Internet| T <-->|WS local| HTTP
 ```
 
 Una partida no depende de quién la esté viendo. Todos reciben el estado calculado por la PC anfitriona. La cámara, partículas, sonido y transiciones del HUD son locales y no se envían por la red.

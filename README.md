@@ -209,10 +209,14 @@ Después de actualizar: detén el servidor anterior con Ctrl+C, ejecuta `bb serv
 |---|---|
 | `src/arena/engine.cljc` | Reglas puras e inmutables, compartidas entre Clojure y ClojureScript |
 | `src/arena/server.clj` | Agentes, salas, HTTP, WebSocket y túnel |
-| `src/arena/client.cljs` | Controles, interfaz, sincronización y predicción de movimiento |
+| `src/arena/client.cljs` | `arena.client`: startup, input, transport, match, prediction, simulation, tick, and bindings; retains the socket and last-message state |
+| `src/arena/client/state.cljs` | `arena.client.state`: shared `defonce` state atoms |
+| `src/arena/client/ui.cljs` | `arena.client.ui`: DOM, preferences, notifications, abilities, rooms (with an on-join callback), invites, HUD, events, QR, copy, and fullscreen; does not require `arena.client` |
 | `src/arena/presentation.cljc` | Interpolación pura de jugadores/balas, búfer y amortiguación por tiempo |
-| `src/arena/view.cljs` | Canvas, partículas, sprites y cámara |
-| `src/arena/audio.cljs` | Muestras de sonido, caché, mezcla y volumen |
+| `src/arena/view.cljs` | `arena.view`: composition, floor, players, shots, pickups, ultimates, crosshair, and draw; preserves the public facade |
+| `src/arena/view/canvas_module.cljs` | `arena.view.canvas-module`: initialization, palette, sprites, primitives, reduced motion, and cap |
+| `src/arena/view/effects_module.cljs` | `arena.view.effects-module`: settings, state, audio, particles, events, advance, ghost, and effects |
+| `src/arena/audio.cljs` | `arena.audio`: reusable sound samples, cache, mixing, and volume support for effects |
 | `public/index.html`, `public/style.css`, `public/combat.css` | Estructura y presentación de la página |
 | `public/art/` | Cuatro personajes y ocho cuadros por personaje |
 | `test/arena/` | Pruebas de reglas, protocolo e integración |
